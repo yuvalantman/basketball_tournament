@@ -1,0 +1,18 @@
+{
+  "name": "Hoops — Tournament Builder",
+  "short_name": "Hoops",
+  "description": "Create basketball tournaments with friends: ratings, balanced teams, archetypes and brackets.",
+  "start_url": "/home",
+  "display": "standalone",
+  "background_color": "#0a0a0f",
+  "theme_color": "#0a0a0f",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
