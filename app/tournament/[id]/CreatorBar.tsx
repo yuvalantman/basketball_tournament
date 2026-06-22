@@ -108,7 +108,9 @@ export function CreatorBar({
           <>
             <p className="text-xs text-[var(--muted)] text-center">
               {roster.length} player{roster.length !== 1 ? "s" : ""} joined
-              {roster.length < 4 ? " · need at least 4 to play a bracket" : ""}
+              {roster.length < 8
+                ? " · 8+ recommended so everyone gets 7 ratings"
+                : ""}
             </p>
             <Button
               className="w-full"

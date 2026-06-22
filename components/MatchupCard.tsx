@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { toPng } from "html-to-image";
 import { Avatar } from "@/components/ui";
-import { cmToFeet } from "@/lib/constants";
+import { cmToFeet, overallTo100 } from "@/lib/constants";
 import type { PlayerStats, Profile, Team } from "@/lib/types";
 
 function teamAvgHeight(members: Profile[]): string {
@@ -14,14 +14,15 @@ function teamAvgHeight(members: Profile[]): string {
 }
 
 function teamOverall(members: Profile[], stats: Map<string, PlayerStats>): number | null {
+  // Average each player's 70–100 OVR into a team OVR on the same scale.
   const ovrs = members
-    .map((m) => stats.get(m.id)?.overall)
+    .map((m) => {
+      const s = stats.get(m.id);
+      return s?.overall != null ? overallTo100(s.overall, s.rating_mode) : null;
+    })
     .filter((v): v is number => v != null);
   if (!ovrs.length) return null;
-  const avg = ovrs.reduce((a, b) => a + b, 0) / ovrs.length;
-  // 8-param overall is 1..5 -> scale to /100; single is already 1..10 -> /10*100.
-  const mode = stats.get(members[0]?.id)?.rating_mode;
-  return mode === "single" ? avg * 10 : avg * 20;
+  return Math.round(ovrs.reduce((a, b) => a + b, 0) / ovrs.length);
 }
 
 export function MatchupCard({

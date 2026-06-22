@@ -15,6 +15,7 @@ import {
   randomKnockout4,
   type GameSpec,
 } from "@/lib/bracket";
+import { requiredRatings } from "@/lib/constants";
 import type {
   RatingMode,
   StatsVisibility,
@@ -293,7 +294,8 @@ export async function getRatingProgress(
       .select("user_id, profiles(display_name, username)")
       .eq("tournament_id", tournamentId);
     const ids = (players ?? []).map((p) => p.user_id);
-    const expected = Math.max(0, ids.length - 1); // everyone except self
+    // Each player must rate, and be rated by, at least this many others.
+    const expected = requiredRatings(ids.length);
 
     // Count DISTINCT ratees each rater has rated. We deliberately only read
     // rater_id + ratee_id here — never the scores — so nothing about *how*
@@ -377,9 +379,41 @@ export async function generateTeams(
     const { data: ratings } = await admin
       .from("ratings")
       .select(
-        "ratee_id, shooting, scoring, dribbling, rebounding, passing, defending, physicality, athleticism, single_score",
+        "rater_id, ratee_id, shooting, scoring, dribbling, rebounding, passing, defending, physicality, athleticism, single_score",
       )
       .eq("tournament_id", tournamentId);
+
+    // Enforce the coverage rule: every player must have rated, and been rated
+    // by, at least the required number of others before teams can be built.
+    const required = requiredRatings(players.length);
+    if (required > 0) {
+      const gave = new Map<string, Set<string>>();
+      const received = new Map<string, Set<string>>();
+      for (const r of ratings ?? []) {
+        (gave.get(r.rater_id) ?? gave.set(r.rater_id, new Set()).get(r.rater_id)!).add(
+          r.ratee_id,
+        );
+        (
+          received.get(r.ratee_id) ??
+          received.set(r.ratee_id, new Set()).get(r.ratee_id)!
+        ).add(r.rater_id);
+      }
+      const short = players.filter(
+        (p) =>
+          (gave.get(p.id)?.size ?? 0) < required ||
+          (received.get(p.id)?.size ?? 0) < required,
+      );
+      if (short.length > 0) {
+        const names = short
+          .slice(0, 5)
+          .map((p) => p.display_name)
+          .join(", ");
+        return {
+          ok: false,
+          error: `Everyone must rate and be rated by at least ${required} players first. Still short: ${names}${short.length > 5 ? "…" : ""}.`,
+        };
+      }
+    }
 
     const { data: restrictionRows } = await admin
       .from("restrictions")

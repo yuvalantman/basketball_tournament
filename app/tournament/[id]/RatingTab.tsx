@@ -4,7 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Avatar, Badge, Button, Card, Spinner } from "@/components/ui";
-import { PARAM_LABELS, RATING_PARAMS, type RatingParam } from "@/lib/constants";
+import {
+  PARAM_LABELS,
+  RATING_PARAMS,
+  requiredRatings,
+  type RatingParam,
+} from "@/lib/constants";
 import type { Profile, Tournament } from "@/lib/types";
 
 export function RatingTab({
@@ -24,6 +29,8 @@ export function RatingTab({
 
   const done = rated.size;
   const total = others.length;
+  const required = requiredRatings(roster.length); // at least 7 (or everyone)
+  const metMin = done >= required;
 
   return (
     <div className="space-y-4">
@@ -31,16 +38,29 @@ export function RatingTab({
         <div className="flex items-center justify-between mb-2">
           <span className="font-semibold">Your ratings</span>
           <span className="text-sm text-[var(--muted)]">
-            {done}/{total} done
+            {done}/{total} rated
           </span>
         </div>
         <div className="h-2 rounded-full bg-[var(--border)] overflow-hidden">
           <div
-            className="h-full bg-[var(--primary)] transition-all"
-            style={{ width: `${total ? (done / total) * 100 : 0}%` }}
+            className={`h-full transition-all ${metMin ? "bg-green-500" : "bg-[var(--primary)]"}`}
+            style={{
+              width: `${required ? Math.min(100, (done / required) * 100) : 100}%`,
+            }}
           />
         </div>
-        <p className="text-xs text-[var(--muted)] mt-2">
+        <p className="text-xs mt-2">
+          {metMin ? (
+            <span className="text-green-400">
+              ✓ You&apos;ve met the minimum of {required}. Rate more if you like!
+            </span>
+          ) : (
+            <span className="text-[var(--muted)]">
+              Rate at least {required} players ({required - done} to go).
+            </span>
+          )}
+        </p>
+        <p className="text-xs text-[var(--muted)] mt-1">
           Ratings are anonymous — no one can see who you rated or how.
         </p>
       </Card>

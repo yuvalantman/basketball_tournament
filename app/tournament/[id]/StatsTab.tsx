@@ -2,7 +2,12 @@
 
 import { Avatar, Badge, Card } from "@/components/ui";
 import { RadarChart } from "@/components/RadarChart";
-import { PARAM_LABELS, cmToFeet, type RatingParam } from "@/lib/constants";
+import {
+  PARAM_LABELS,
+  cmToFeet,
+  overallTo100,
+  type RatingParam,
+} from "@/lib/constants";
 import type { PlayerStats } from "@/lib/types";
 
 export function StatsTab({ stats }: { stats: PlayerStats[] }) {
@@ -53,13 +58,9 @@ function PlayerStatCard({ p }: { p: PlayerStats }) {
         {p.overall != null && (
           <div className="text-right">
             <div className="text-2xl font-extrabold text-[var(--primary)]">
-              {p.rating_mode === "single"
-                ? p.overall.toFixed(1)
-                : (p.overall * 20).toFixed(0)}
+              {overallTo100(p.overall, p.rating_mode)}
             </div>
-            <div className="text-[10px] text-[var(--muted)] uppercase">
-              {p.rating_mode === "single" ? "/ 10" : "OVR"}
-            </div>
+            <div className="text-[10px] text-[var(--muted)] uppercase">OVR</div>
           </div>
         )}
       </div>

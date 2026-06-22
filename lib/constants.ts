@@ -48,6 +48,25 @@ export type TeamSize = 2 | 3 | 5;
 
 export const TEAM_SIZES: TeamSize[] = [2, 3, 5];
 
+// Rating coverage rule: every player must rate, and be rated by, at least this
+// many others before teams can be built. Capped at the number of other players
+// when the group is smaller than the threshold.
+export const MIN_RATINGS = 7;
+
+export function requiredRatings(playerCount: number): number {
+  return Math.min(MIN_RATINGS, Math.max(0, playerCount - 1));
+}
+
+// Map a raw average to the 70–100 "OVR" scale shown for each player.
+//   eight-param mode: raw mean is 1..5
+//   single mode:      raw score is 1..10
+// Both are linearly rescaled so the floor is 70 and a perfect score is 100.
+export function overallTo100(raw: number, mode: RatingMode): number {
+  const [min, max] = mode === "single" ? [1, 10] : [1, 5];
+  const clamped = Math.max(min, Math.min(max, raw));
+  return Math.round(70 + ((clamped - min) / (max - min)) * 30);
+}
+
 export const RATING_MODE_LABELS: Record<RatingMode, string> = {
   eight: "Detailed — 8 skills rated 1–5",
   single: "Simple — one overall score 1–10",
