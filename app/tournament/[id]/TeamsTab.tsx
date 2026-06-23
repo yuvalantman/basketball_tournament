@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Avatar, Badge, Button, Card, Spinner } from "@/components/ui";
+import { TeamNameEditor } from "@/components/TeamNameEditor";
 import { cmToFeet } from "@/lib/constants";
 import type { Profile, Team, Tournament } from "@/lib/types";
 import { generateTeams, swapPlayers } from "@/app/actions/tournament";
@@ -17,10 +18,12 @@ export function TeamsTab({
   tournament,
   teams,
   isCreator,
+  myUserId,
 }: {
   tournament: Tournament;
   teams: Team[];
   isCreator: boolean;
+  myUserId: string;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -73,10 +76,17 @@ export function TeamsTab({
       ) : (
         teams.map((t) => {
           const ah = avgHeight(t.members);
+          const canEdit =
+            isCreator || (t.members ?? []).some((m) => m.id === myUserId);
           return (
             <Card key={t.id} className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h3 className="font-bold text-lg">{t.name}</h3>
+              <div className="flex items-center justify-between gap-2">
+                <TeamNameEditor
+                  tournamentId={tournament.id}
+                  team={t}
+                  canEdit={canEdit}
+                  onDone={() => router.refresh()}
+                />
                 {ah && (
                   <Badge>avg {cmToFeet(Math.round(ah))}</Badge>
                 )}

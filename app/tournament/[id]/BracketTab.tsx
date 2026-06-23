@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Avatar, Badge, Button, Card, Input, Spinner } from "@/components/ui";
 import { MatchupCard } from "@/components/MatchupCard";
+import { TeamNameEditor } from "@/components/TeamNameEditor";
 import { computeStandings } from "@/lib/bracket";
 import { setGameScore } from "@/app/actions/tournament";
 import type { Game, PlayerStats, Team, Tournament } from "@/lib/types";
@@ -13,14 +14,17 @@ export function BracketTab({
   teams,
   games,
   isCreator,
+  myUserId,
   statsById,
 }: {
   tournament: Tournament;
   teams: Team[];
   games: Game[];
   isCreator: boolean;
+  myUserId: string;
   statsById: Map<string, PlayerStats>;
 }) {
+  const router = useRouter();
   const stats = statsById;
   const [matchup, setMatchup] = useState<{ a: Team; b: Team; label: string } | null>(
     null,
@@ -30,6 +34,9 @@ export function BracketTab({
     () => new Map(teams.map((t) => [t.id, t])),
     [teams],
   );
+
+  // The team the current user is on (so they can rename it mid-bracket).
+  const myTeam = teams.find((t) => (t.members ?? []).some((m) => m.id === myUserId));
 
   const groupGames = games.filter((g) => g.stage === "group");
   const bracketGames = games.filter((g) => g.stage === "bracket");
@@ -45,6 +52,21 @@ export function BracketTab({
 
   return (
     <div className="space-y-5">
+      {myTeam && (
+        <Card className="flex items-center justify-between gap-2 bg-[var(--surface-2)]">
+          <div className="min-w-0">
+            <div className="text-xs text-[var(--muted)]">Your team</div>
+            <TeamNameEditor
+              tournamentId={tournament.id}
+              team={myTeam}
+              canEdit={true}
+              onDone={() => router.refresh()}
+              className="font-bold text-lg"
+            />
+          </div>
+        </Card>
+      )}
+
       {champion && (
         <Card className="text-center bg-gradient-to-b from-[var(--primary)]/20 to-transparent border-[var(--primary)]/40">
           <div className="text-4xl mb-1">🏆</div>

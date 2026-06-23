@@ -520,6 +520,50 @@ export async function swapPlayers(
   }
 }
 
+// Any member of a team can rename their own team; the new name shows for
+// everyone (realtime-propagated). The tournament creator can rename any team.
+export async function renameTeam(
+  tournamentId: string,
+  teamId: string,
+  name: string,
+): Promise<ActionResult> {
+  try {
+    const uid = await requireUser();
+    const clean = name.trim().slice(0, 30);
+    if (!clean) return { ok: false, error: "Team name can't be empty." };
+
+    const admin = createAdminClient();
+    const { data: team } = await admin
+      .from("teams")
+      .select("id, tournament_id")
+      .eq("id", teamId)
+      .single();
+    if (!team || team.tournament_id !== tournamentId)
+      return { ok: false, error: "Team not found." };
+
+    // Authorized if you're on that team, or you're the tournament creator.
+    const { data: membership } = await admin
+      .from("team_members")
+      .select("user_id")
+      .eq("team_id", teamId)
+      .eq("user_id", uid)
+      .maybeSingle();
+    const { data: tournament } = await admin
+      .from("tournaments")
+      .select("creator_id")
+      .eq("id", tournamentId)
+      .single();
+    if (!membership && tournament?.creator_id !== uid)
+      return { ok: false, error: "Only this team's players can rename it." };
+
+    await admin.from("teams").update({ name: clean }).eq("id", teamId);
+    revalidatePath(`/tournament/${tournamentId}`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
 // --- schedule / bracket -----------------------------------------------------
 
 // Insert a set of GameSpecs and wire up winner/loser advancement links.

@@ -115,7 +115,12 @@ export function TournamentView(props: {
       )}
       {active === "stats" && <StatsTab stats={props.playerStats} />}
       {active === "teams" && (
-        <TeamsTab tournament={tournament} teams={teams} isCreator={isCreator} />
+        <TeamsTab
+          tournament={tournament}
+          teams={teams}
+          isCreator={isCreator}
+          myUserId={props.myUserId}
+        />
       )}
       {active === "bracket" && (
         <BracketTab
@@ -123,6 +128,7 @@ export function TournamentView(props: {
           teams={teams}
           games={games}
           isCreator={isCreator}
+          myUserId={props.myUserId}
           statsById={statsById}
         />
       )}
