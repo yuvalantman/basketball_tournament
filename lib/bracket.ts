@@ -39,20 +39,44 @@ function shuffle<T>(arr: T[], seed: number): T[] {
   return a;
 }
 
-// Group stage where every team plays exactly 2 games: a single cycle through
-// all teams (i vs i+1, wrapping). N teams -> N games, degree 2 each.
+// Full round-robin group stage: every team plays every other team once,
+// scheduled into matchdays via the circle method so each team plays once per
+// round. N teams -> N-1 games each (e.g. 6 teams -> 5 matchdays of 3 games,
+// 5 games per team). `round` is the 1-based matchday; the top 4 by record
+// advance to the bracket afterwards.
 export function generateGroupStage(teamIds: string[]): GameSpec[] {
-  const n = teamIds.length;
+  // Pad with a bye (null) when odd so every round pairs evenly.
+  const list: (string | null)[] = [...teamIds];
+  if (list.length % 2 === 1) list.push(null);
+
+  const m = list.length;
+  const rounds = m - 1;
+  const half = m / 2;
   const games: GameSpec[] = [];
-  for (let i = 0; i < n; i++) {
-    games.push({
-      stage: "group",
-      round: 0,
-      slot: i,
-      teamA: teamIds[i],
-      teamB: teamIds[(i + 1) % n],
-      label: "Group Game (to 11)",
-    });
+
+  // Fix the first team, rotate the rest each round.
+  const rotation = list.slice();
+  for (let r = 0; r < rounds; r++) {
+    let slot = 0;
+    for (let i = 0; i < half; i++) {
+      const a = rotation[i];
+      const b = rotation[m - 1 - i];
+      if (a !== null && b !== null) {
+        games.push({
+          stage: "group",
+          round: r + 1, // 1-based matchday
+          slot: slot++,
+          teamA: a,
+          teamB: b,
+          label: `Matchday ${r + 1}`,
+        });
+      }
+    }
+    // rotate: keep index 0 fixed, move last into position 1, shift others right
+    const fixed = rotation[0];
+    const rest = rotation.slice(1);
+    rest.unshift(rest.pop() as string | null);
+    rotation.splice(0, rotation.length, fixed, ...rest);
   }
   return games;
 }

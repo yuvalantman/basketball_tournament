@@ -113,20 +113,35 @@ console.log("\n=== Bracket: exactly 4 teams ===");
   );
 }
 
-console.log("\n=== Bracket: >4 teams -> group stage, 2 games each ===");
+console.log("\n=== Bracket: 6 teams -> full round robin (5 games each) ===");
 {
   const teamIds = ["A", "B", "C", "D", "E", "F"];
   const plan = planInitialSchedule(teamIds, 1);
-  assert(plan.kind === "group", "6 teams -> group stage first");
-  // each team appears in exactly 2 games
+  assert(plan.kind === "group", "6 teams -> round robin group stage");
+  // full round robin: each team plays every other once = 5 games each, 15 total
   const counts = new Map<string, number>();
   for (const g of plan.games) {
     counts.set(g.teamA!, (counts.get(g.teamA!) ?? 0) + 1);
     counts.set(g.teamB!, (counts.get(g.teamB!) ?? 0) + 1);
   }
   assert(
-    [...counts.values()].every((c) => c === 2),
-    "every team plays exactly 2 group games",
+    [...counts.values()].every((c) => c === 5),
+    "every team plays exactly 5 group games",
+  );
+  assert(plan.games.length === 15, "6 teams -> 15 total round-robin games");
+  // every pairing is unique (true round robin, no repeats)
+  const pairs = new Set(
+    plan.games.map((g) => [g.teamA, g.teamB].sort().join("-")),
+  );
+  assert(pairs.size === 15, "all 15 pairings are unique");
+  // 5 matchdays, 3 games each
+  const byRound = new Map<number, number>();
+  for (const g of plan.games)
+    byRound.set(g.round, (byRound.get(g.round) ?? 0) + 1);
+  assert(byRound.size === 5, "scheduled into 5 matchdays");
+  assert(
+    [...byRound.values()].every((c) => c === 3),
+    "each matchday has 3 games",
   );
 
   // Fake some results and check top-4 selection + random bracket.

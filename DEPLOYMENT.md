@@ -148,9 +148,10 @@ Send friends the Vercel link. Each person:
    (even across every skill + height, honoring your restrictions). Re-roll or
    swap players if you like.
 4. **Lock teams & start games** — builds the schedule:
-   - 4 teams → semfinals → final (+ 3rd place).
-   - 5+ teams → each plays 2 group games to 11; top 4 by record advance to a
-     random bracket.
+   - 4 teams → semifinals → final (+ 3rd place).
+   - 5+ teams → full round robin (everyone plays everyone once, games to 11),
+     organized into matchdays; top 4 by record advance to a random bracket
+     (semifinals → final). E.g. 6 teams → 5 matchdays, 5 games per team.
 5. **Enter scores** — the bracket auto-advances. Tap **▶ Intro** on any game
    for the animated VS matchup card.
 

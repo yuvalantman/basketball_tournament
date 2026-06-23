@@ -20,8 +20,9 @@ archetype, and play through an auto-generated bracket.
 - **Multi-dimensional team balancing** — even across every skill *and* height,
   not just total strength, honoring "keep these two apart" restrictions.
   Re-roll or hand-swap.
-- **Auto brackets**: 4 teams → semis/final; 5+ teams → group stage (2 games to
-  11) → top 4 → random bracket. Auto-advancing as scores are entered.
+- **Auto brackets**: 4 teams → semis/final; 5+ teams → full round-robin group
+  stage (everyone plays everyone, scheduled into matchdays) → top 4 by record →
+  random bracket. Auto-advancing as scores are entered.
 - **Animated VS matchup cards** for each game.
 
 ## Tech

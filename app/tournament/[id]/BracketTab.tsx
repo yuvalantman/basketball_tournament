@@ -63,19 +63,30 @@ export function BracketTab({
       {groupGames.length > 0 && (
         <section className="space-y-3">
           <h3 className="text-sm font-semibold text-[var(--muted)] uppercase tracking-wide">
-            Group Stage — first to 11
+            Round Robin — top 4 advance · first to 11
           </h3>
           <StandingsTable standings={standings} teamById={teamById} />
-          {groupGames.map((g) => (
-            <GameRow
-              key={g.id}
-              game={g}
-              teamById={teamById}
-              isCreator={isCreator}
-              tournamentId={tournament.id}
-              onIntro={(a, b, label) => setMatchup({ a, b, label })}
-            />
-          ))}
+          {[...new Set(groupGames.map((g) => g.round))]
+            .sort((a, b) => a - b)
+            .map((round) => (
+              <div key={round} className="space-y-2">
+                <div className="text-xs font-semibold text-[var(--muted)] pt-1">
+                  Matchday {round}
+                </div>
+                {groupGames
+                  .filter((g) => g.round === round)
+                  .map((g) => (
+                    <GameRow
+                      key={g.id}
+                      game={g}
+                      teamById={teamById}
+                      isCreator={isCreator}
+                      tournamentId={tournament.id}
+                      onIntro={(a, b, label) => setMatchup({ a, b, label })}
+                    />
+                  ))}
+              </div>
+            ))}
         </section>
       )}
 
