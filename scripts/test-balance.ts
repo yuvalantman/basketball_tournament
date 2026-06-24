@@ -161,6 +161,45 @@ console.log("\n=== Bracket: 6 teams -> full round robin (5 games each) ===");
   );
 }
 
+console.log("\n=== Bracket: 7 teams -> 7 matchdays, one team rests each ===");
+{
+  const teamIds = ["A", "B", "C", "D", "E", "F", "G"];
+  const plan = planInitialSchedule(teamIds, 1);
+  // Full round robin for 7 teams: each plays the other 6 = 6 games, C(7,2)=21.
+  const counts = new Map<string, number>();
+  for (const g of plan.games) {
+    counts.set(g.teamA!, (counts.get(g.teamA!) ?? 0) + 1);
+    counts.set(g.teamB!, (counts.get(g.teamB!) ?? 0) + 1);
+  }
+  assert(
+    [...counts.values()].every((c) => c === 6),
+    "every team plays exactly 6 games",
+  );
+  assert(plan.games.length === 21, "7 teams -> 21 total games");
+  // 7 matchdays, 3 games each (one team rests per round = the bye).
+  const byRound = new Map<number, number>();
+  for (const g of plan.games)
+    byRound.set(g.round, (byRound.get(g.round) ?? 0) + 1);
+  assert(byRound.size === 7, "scheduled into 7 matchdays");
+  assert(
+    [...byRound.values()].every((c) => c === 3),
+    "each matchday has 3 games (1 of 7 teams rests)",
+  );
+  // Each team rests exactly once across the 7 rounds.
+  const playsPerTeam = new Map<string, Set<number>>();
+  for (const g of plan.games) {
+    for (const t of [g.teamA!, g.teamB!]) {
+      (playsPerTeam.get(t) ?? playsPerTeam.set(t, new Set()).get(t)!).add(
+        g.round,
+      );
+    }
+  }
+  assert(
+    [...playsPerTeam.values()].every((rounds) => rounds.size === 6),
+    "each team plays in 6 of 7 rounds (rests exactly once)",
+  );
+}
+
 console.log("\n=== Archetypes ===");
 {
   const sharp = Object.fromEntries(

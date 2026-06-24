@@ -6,7 +6,12 @@ import { Avatar, Badge, Button, Card, Spinner } from "@/components/ui";
 import { TeamNameEditor } from "@/components/TeamNameEditor";
 import { cmToFeet } from "@/lib/constants";
 import type { Profile, Team, Tournament } from "@/lib/types";
-import { generateTeams, swapPlayers } from "@/app/actions/tournament";
+import {
+  assignToTeam,
+  generateTeams,
+  removeFromTeam,
+  swapPlayers,
+} from "@/app/actions/tournament";
 
 function avgHeight(members: Profile[] = []): number | null {
   const hs = members.map((m) => m.height_cm).filter((h): h is number => !!h);
@@ -17,11 +22,13 @@ function avgHeight(members: Profile[] = []): number | null {
 export function TeamsTab({
   tournament,
   teams,
+  roster,
   isCreator,
   myUserId,
 }: {
   tournament: Tournament;
   teams: Team[];
+  roster: Profile[];
   isCreator: boolean;
   myUserId: string;
 }) {
@@ -29,6 +36,13 @@ export function TeamsTab({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [swapMode, setSwapMode] = useState(false);
+
+  // Players on the roster who aren't on any team (e.g. a newcomer who joined
+  // after teams were set, or someone the creator benched).
+  const assignedIds = new Set(
+    teams.flatMap((t) => (t.members ?? []).map((m) => m.id)),
+  );
+  const unassigned = roster.filter((p) => !assignedIds.has(p.id));
 
   async function reroll() {
     setBusy(true);
@@ -74,40 +88,151 @@ export function TeamsTab({
       {swapMode && isCreator ? (
         <SwapUI tournamentId={tournament.id} teams={teams} onDone={() => router.refresh()} />
       ) : (
-        teams.map((t) => {
-          const ah = avgHeight(t.members);
-          const canEdit =
-            isCreator || (t.members ?? []).some((m) => m.id === myUserId);
-          return (
-            <Card key={t.id} className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <TeamNameEditor
-                  tournamentId={tournament.id}
-                  team={t}
-                  canEdit={canEdit}
-                  onDone={() => router.refresh()}
-                />
-                {ah && (
-                  <Badge>avg {cmToFeet(Math.round(ah))}</Badge>
-                )}
-              </div>
-              <div className="space-y-1.5">
-                {(t.members ?? []).map((m) => (
-                  <div key={m.id} className="flex items-center gap-3">
-                    <Avatar src={m.photo_url} name={m.display_name} size={36} />
-                    <span className="flex-1 truncate">{m.display_name}</span>
-                    {m.height_cm && (
-                      <span className="text-xs text-[var(--muted)]">
-                        {cmToFeet(m.height_cm)}
-                      </span>
-                    )}
+        <>
+          {unassigned.length > 0 && (
+            <UnassignedCard
+              tournamentId={tournament.id}
+              players={unassigned}
+              teams={teams}
+              isCreator={isCreator}
+              onDone={() => router.refresh()}
+            />
+          )}
+          {teams.map((t) => {
+            const ah = avgHeight(t.members);
+            const count = (t.members ?? []).length;
+            const canEdit =
+              isCreator || (t.members ?? []).some((m) => m.id === myUserId);
+            return (
+              <Card key={t.id} className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <TeamNameEditor
+                    tournamentId={tournament.id}
+                    team={t}
+                    canEdit={canEdit}
+                    onDone={() => router.refresh()}
+                  />
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Badge>{count} {count === 1 ? "player" : "players"}</Badge>
+                    {ah && <Badge>avg {cmToFeet(Math.round(ah))}</Badge>}
                   </div>
-                ))}
-              </div>
-            </Card>
-          );
-        })
+                </div>
+                <div className="space-y-1.5">
+                  {(t.members ?? []).map((m) => (
+                    <div key={m.id} className="flex items-center gap-3">
+                      <Avatar src={m.photo_url} name={m.display_name} size={36} />
+                      <span className="flex-1 truncate">{m.display_name}</span>
+                      {m.height_cm && (
+                        <span className="text-xs text-[var(--muted)]">
+                          {cmToFeet(m.height_cm)}
+                        </span>
+                      )}
+                      {isCreator && (
+                        <button
+                          onClick={async () => {
+                            await removeFromTeam(tournament.id, m.id);
+                            router.refresh();
+                          }}
+                          className="text-xs text-[var(--muted)] hover:text-amber-400 px-1"
+                          title="Bench (remove from team, keep in tournament)"
+                        >
+                          bench
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            );
+          })}
+        </>
       )}
+    </div>
+  );
+}
+
+function UnassignedCard({
+  tournamentId,
+  players,
+  teams,
+  isCreator,
+  onDone,
+}: {
+  tournamentId: string;
+  players: Profile[];
+  teams: Team[];
+  isCreator: boolean;
+  onDone: () => void;
+}) {
+  return (
+    <Card className="space-y-3 border-amber-500/40">
+      <div>
+        <h3 className="font-semibold">Not on a team yet</h3>
+        <p className="text-xs text-[var(--muted)] mt-0.5">
+          {isCreator
+            ? "Drop each player into a team — pick the one that's short."
+            : "Waiting to be placed by the organizer."}
+        </p>
+      </div>
+      <div className="space-y-2">
+        {players.map((p) => (
+          <div key={p.id} className="flex items-center gap-2">
+            <Avatar src={p.photo_url} name={p.display_name} size={32} />
+            <span className="flex-1 truncate text-sm">{p.display_name}</span>
+            {isCreator && (
+              <AssignPicker
+                tournamentId={tournamentId}
+                userId={p.id}
+                teams={teams}
+                onDone={onDone}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function AssignPicker({
+  tournamentId,
+  userId,
+  teams,
+  onDone,
+}: {
+  tournamentId: string;
+  userId: string;
+  teams: Team[];
+  onDone: () => void;
+}) {
+  const [teamId, setTeamId] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function assign() {
+    if (!teamId) return;
+    setBusy(true);
+    await assignToTeam(tournamentId, userId, teamId);
+    setBusy(false);
+    onDone();
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 shrink-0">
+      <select
+        value={teamId}
+        onChange={(e) => setTeamId(e.target.value)}
+        className="rounded-lg bg-[var(--surface-2)] border border-[var(--border)] px-2 py-1.5 text-xs max-w-[120px]"
+      >
+        <option value="">Team…</option>
+        {teams.map((t) => (
+          <option key={t.id} value={t.id}>
+            {t.name} ({(t.members ?? []).length})
+          </option>
+        ))}
+      </select>
+      <Button size="sm" onClick={assign} disabled={busy || !teamId}>
+        {busy ? <Spinner /> : "Add"}
+      </Button>
     </div>
   );
 }

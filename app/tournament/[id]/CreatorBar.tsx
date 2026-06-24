@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { Button, Card, Spinner } from "@/components/ui";
 import {
   advanceGroupToBracket,
+  backToTeams,
   generateTeams,
   getRatingProgress,
+  reopenRating,
   setStatus,
   startSchedule,
 } from "@/app/actions/tournament";
@@ -171,6 +173,46 @@ export function CreatorBar({
           >
             {busy ? <Spinner /> : "🏆 Finish tournament"}
           </Button>
+        )}
+
+        {/* Go back a stage (teams/bracket/done). */}
+        {(status === "teams" ||
+          status === "bracket" ||
+          status === "done") && (
+          <div className="flex flex-wrap gap-2 justify-center pt-1">
+            {(status === "bracket" || status === "done") && (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() => {
+                  if (
+                    confirm(
+                      "Go back to the teams stage? This clears the current games/bracket (teams and ratings are kept).",
+                    )
+                  )
+                    run(() => backToTeams(tournament.id));
+                }}
+              >
+                ↩ Back to teams
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={() => {
+                if (
+                  confirm(
+                    "Reopen for roster & re-rating? New players can join with the code and everyone can rate them. This clears the current teams and games — but all existing ratings are kept.",
+                  )
+                )
+                  run(() => reopenRating(tournament.id));
+              }}
+            >
+              ↩ Reopen for new players
+            </Button>
+          </div>
         )}
       </div>
     </div>

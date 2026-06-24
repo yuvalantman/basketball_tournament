@@ -118,14 +118,11 @@ export async function joinTournament(codeInput: string): Promise<ActionResult> {
       .eq("code", code)
       .maybeSingle();
     if (!tournament) return { ok: false, error: "No tournament with that code." };
-    // Late joins are allowed while still in the lobby or the rating phase. A
-    // late joiner then needs to rate everyone and be rated by everyone — which
-    // the progress panel reflects automatically (expected count is dynamic).
-    if (tournament.status !== "lobby" && tournament.status !== "rating")
-      return {
-        ok: false,
-        error: "This tournament has already moved past rating.",
-      };
+    // Joins are allowed any time the tournament is still running. Even after
+    // teams are set, a newcomer can join, get rated, and be slotted into a team
+    // by the creator. Only a finished tournament is closed.
+    if (tournament.status === "done")
+      return { ok: false, error: "This tournament is finished." };
 
     await admin
       .from("tournament_players")
@@ -227,6 +224,51 @@ export async function setStatus(
       .update({ status })
       .eq("id", tournamentId);
     if (error) throw new Error(error.message);
+    revalidatePath(`/tournament/${tournamentId}`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+// Reopen a tournament for roster + rating changes (e.g. swap players in/out and
+// re-rate). Clears the generated teams and any games but KEEPS all ratings and
+// the roster, and reopens rating so new players can join with the code and
+// everyone can rate the newcomers. Re-running "build teams" later regenerates
+// fresh teams/bracket.
+export async function reopenRating(
+  tournamentId: string,
+): Promise<ActionResult> {
+  try {
+    await requireCreator(tournamentId);
+    const admin = createAdminClient();
+    await admin.from("games").delete().eq("tournament_id", tournamentId);
+    await admin.from("teams").delete().eq("tournament_id", tournamentId); // cascades team_members
+    await admin
+      .from("tournaments")
+      .update({ status: "rating" })
+      .eq("id", tournamentId);
+    revalidatePath(`/tournament/${tournamentId}`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+// Step back from the bracket to the teams stage: clears the schedule/games but
+// keeps the teams, so the creator can re-roll/edit teams and rebuild a bracket
+// without redoing ratings.
+export async function backToTeams(
+  tournamentId: string,
+): Promise<ActionResult> {
+  try {
+    await requireCreator(tournamentId);
+    const admin = createAdminClient();
+    await admin.from("games").delete().eq("tournament_id", tournamentId);
+    await admin
+      .from("tournaments")
+      .update({ status: "teams" })
+      .eq("id", tournamentId);
     revalidatePath(`/tournament/${tournamentId}`);
     return { ok: true };
   } catch (e) {
@@ -557,6 +599,86 @@ export async function renameTeam(
       return { ok: false, error: "Only this team's players can rename it." };
 
     await admin.from("teams").update({ name: clean }).eq("id", teamId);
+    revalidatePath(`/tournament/${tournamentId}`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+// Creator drops a roster player into a specific team (e.g. a newcomer into the
+// team that lost a player). Removes them from any other team first so they're
+// only on one. Teams are otherwise left untouched (no re-roll).
+export async function assignToTeam(
+  tournamentId: string,
+  userId: string,
+  teamId: string,
+): Promise<ActionResult> {
+  try {
+    await requireCreator(tournamentId);
+    const admin = createAdminClient();
+
+    const { data: member } = await admin
+      .from("tournament_players")
+      .select("user_id")
+      .eq("tournament_id", tournamentId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (!member)
+      return { ok: false, error: "That player isn't in this tournament." };
+
+    const { data: target } = await admin
+      .from("teams")
+      .select("id, tournament_id")
+      .eq("id", teamId)
+      .single();
+    if (!target || target.tournament_id !== tournamentId)
+      return { ok: false, error: "Team not found." };
+
+    // Remove from any current team in this tournament, then add to the target.
+    const { data: teams } = await admin
+      .from("teams")
+      .select("id")
+      .eq("tournament_id", tournamentId);
+    const teamIds = (teams ?? []).map((t) => t.id);
+    if (teamIds.length)
+      await admin
+        .from("team_members")
+        .delete()
+        .in("team_id", teamIds)
+        .eq("user_id", userId);
+    await admin
+      .from("team_members")
+      .insert({ team_id: teamId, user_id: userId });
+
+    revalidatePath(`/tournament/${tournamentId}`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+// Creator pulls a player off their team (benches them) without removing them
+// from the tournament — they become an unassigned player who can be slotted
+// elsewhere.
+export async function removeFromTeam(
+  tournamentId: string,
+  userId: string,
+): Promise<ActionResult> {
+  try {
+    await requireCreator(tournamentId);
+    const admin = createAdminClient();
+    const { data: teams } = await admin
+      .from("teams")
+      .select("id")
+      .eq("tournament_id", tournamentId);
+    const teamIds = (teams ?? []).map((t) => t.id);
+    if (teamIds.length)
+      await admin
+        .from("team_members")
+        .delete()
+        .in("team_id", teamIds)
+        .eq("user_id", userId);
     revalidatePath(`/tournament/${tournamentId}`);
     return { ok: true };
   } catch (e) {

@@ -43,7 +43,8 @@ export function TournamentView(props: {
     const list: { key: Tab; label: string }[] = [
       { key: "players", label: "Players" },
     ];
-    if (status === "rating") list.push({ key: "rate", label: "Rate" });
+    if (status === "rating" || status === "teams" || status === "bracket")
+      list.push({ key: "rate", label: "Rate" });
     if (status === "teams" || status === "bracket" || status === "done") {
       list.push({ key: "stats", label: "Stats" });
       list.push({ key: "teams", label: "Teams" });
@@ -118,6 +119,7 @@ export function TournamentView(props: {
         <TeamsTab
           tournament={tournament}
           teams={teams}
+          roster={roster}
           isCreator={isCreator}
           myUserId={props.myUserId}
         />
