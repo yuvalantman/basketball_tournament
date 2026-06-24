@@ -33,12 +33,15 @@ export function PlayersTab({
   const nameOf = (id: string) =>
     roster.find((p) => p.id === id)?.display_name ?? "Player";
 
-  // Roster changes are allowed while still organizing (before teams are locked
-  // into a schedule). Settings/restrictions likewise.
+  // Settings & restrictions are editable while organizing (before games).
   const organizing =
     tournament.status === "lobby" ||
     tournament.status === "rating" ||
     tournament.status === "teams";
+  // Removing a player is allowed any time the tournament is still running —
+  // including mid-bracket. Removing frees their team slot; a replacement can
+  // join by code and be assigned to that team (no rebuild needed).
+  const canManageRoster = isCreator && tournament.status !== "done";
 
   async function remove(userId: string, name: string) {
     if (!confirm(`Remove ${name} from the tournament?`)) return;
@@ -68,24 +71,23 @@ export function PlayersTab({
                 {p.height_cm ? <div>{cmToFeet(p.height_cm)}</div> : null}
                 {!p.photo_url && <Badge className="mt-1">no photo</Badge>}
               </div>
-              {isCreator &&
-                organizing &&
-                p.id !== tournament.creator_id && (
-                  <button
-                    onClick={() => remove(p.id, p.display_name)}
-                    className="text-[var(--muted)] hover:text-red-400 px-1"
-                    title="Remove player"
-                  >
-                    ✕
-                  </button>
-                )}
+              {canManageRoster && p.id !== tournament.creator_id && (
+                <button
+                  onClick={() => remove(p.id, p.display_name)}
+                  className="text-[var(--muted)] hover:text-red-400 px-1"
+                  title="Remove player"
+                >
+                  ✕
+                </button>
+              )}
             </Card>
           ))}
         </div>
-        {isCreator && tournament.status === "rating" && (
+        {canManageRoster && (
           <p className="text-xs text-[var(--muted)] mt-2">
-            Late joiners can still enter with the code — everyone (including
-            them) will need to rate the newcomer before you build teams.
+            New players can join with the code anytime — even now. After they
+            rate (and are rated), slot them into a team from the{" "}
+            <span className="font-medium">Teams</span> tab. No need to rebuild.
           </p>
         )}
       </div>

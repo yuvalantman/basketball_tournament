@@ -204,13 +204,13 @@ export function CreatorBar({
               onClick={() => {
                 if (
                   confirm(
-                    "Reopen for roster & re-rating? New players can join with the code and everyone can rate them. This clears the current teams and games — but all existing ratings are kept.",
+                    "Full reset: clears the current teams AND games and reopens rating, so you can rebuild everything from scratch. Ratings are kept.\n\nNote: to just add ONE player you do NOT need this — have them join with the code, rate them, then assign them to a team in the Teams tab.",
                   )
                 )
                   run(() => reopenRating(tournament.id));
               }}
             >
-              ↩ Reopen for new players
+              ↩ Reset &amp; rebuild teams
             </Button>
           </div>
         )}
