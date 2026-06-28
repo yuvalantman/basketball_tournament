@@ -395,6 +395,7 @@ export async function getRatingProgress(
 export async function generateTeams(
   tournamentId: string,
   seed?: number,
+  force?: boolean,
 ): Promise<ActionResult> {
   try {
     await requireCreator(tournamentId);
@@ -428,7 +429,7 @@ export async function generateTeams(
     // Enforce the coverage rule: every player must have rated, and been rated
     // by, at least the required number of others before teams can be built.
     const required = requiredRatings(players.length);
-    if (required > 0) {
+    if (required > 0 && !force) {
       const gave = new Map<string, Set<string>>();
       const received = new Map<string, Set<string>>();
       for (const r of ratings ?? []) {

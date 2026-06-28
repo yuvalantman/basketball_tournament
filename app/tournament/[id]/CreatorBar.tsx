@@ -134,7 +134,42 @@ export function CreatorBar({
               className="flex-1"
               size="lg"
               disabled={busy}
-              onClick={() => run(() => generateTeams(tournament.id))}
+              onClick={async () => {
+                setBusy(true);
+                setError(null);
+                const res = await getRatingProgress(tournament.id);
+                if (res.ok) {
+                  const { progress: prog, allDone } = res.data as {
+                    progress: Progress[];
+                    allDone: boolean;
+                  };
+                  if (!progress) setProgress(prog);
+                  if (!allDone) {
+                    const incomplete = prog.filter(
+                      (p) => !p.completed || !p.fullyRated,
+                    );
+                    const names = incomplete
+                      .slice(0, 5)
+                      .map((p) => p.display_name)
+                      .join(", ");
+                    const extra =
+                      incomplete.length > 5
+                        ? ` …and ${incomplete.length - 5} more`
+                        : "";
+                    const ok = confirm(
+                      `Some players haven't finished rating yet: ${names}${extra}.\n\nTheir existing ratings will still be used to balance teams. Proceed anyway?`,
+                    );
+                    if (!ok) {
+                      setBusy(false);
+                      return;
+                    }
+                  }
+                }
+                const result = await generateTeams(tournament.id, undefined, true);
+                if (!result.ok) setError(result.error ?? "Something went wrong");
+                else router.refresh();
+                setBusy(false);
+              }}
             >
               {busy ? <Spinner /> : "Close & build teams →"}
             </Button>
