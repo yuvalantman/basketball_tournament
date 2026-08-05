@@ -1,13 +1,15 @@
 // Offline test of the team-balancing + bracket logic. No database required.
 //   npm run test:balance
-import { balanceTeams, teamCountFor, type BalancePlayer } from "../lib/balancing";
+import { balanceTeams, gamedayTeamSizes, teamCountFor, type BalancePlayer } from "../lib/balancing";
 import {
   computeStandings,
   planInitialSchedule,
   randomKnockout4,
 } from "../lib/bracket";
 import { computeArchetype } from "../lib/archetype";
-import { RATING_PARAMS } from "../lib/constants";
+import { SPORTS } from "../lib/sports";
+
+const BASKETBALL_SKILLS = SPORTS.basketball.params.map((p) => p.key);
 
 let failures = 0;
 function assert(cond: boolean, msg: string) {
@@ -203,24 +205,82 @@ console.log("\n=== Bracket: 7 teams -> 7 matchdays, one team rests each ===");
 console.log("\n=== Archetypes ===");
 {
   const sharp = Object.fromEntries(
-    RATING_PARAMS.map((p) => [p, p === "shooting" ? 5 : 2]),
-  ) as Record<(typeof RATING_PARAMS)[number], number>;
-  const a = computeArchetype(sharp);
+    BASKETBALL_SKILLS.map((p) => [p, p === "shooting" ? 5 : 2]),
+  ) as Record<string, number>;
+  const a = computeArchetype(sharp, "basketball");
   console.log(`    pure shooter -> ${a.archetype} (${a.tier})`);
   assert(a.bestParam === "shooting", "best param is shooting for a pure shooter");
 
   const big = Object.fromEntries(
-    RATING_PARAMS.map((p) => [
-      p,
-      p === "rebounding" || p === "physicality" ? 5 : 2,
-    ]),
-  ) as Record<(typeof RATING_PARAMS)[number], number>;
-  const b = computeArchetype(big);
+    BASKETBALL_SKILLS.map((p) => [p, p === "rebounding" || p === "physicality" ? 5 : 2]),
+  ) as Record<string, number>;
+  const b = computeArchetype(big, "basketball");
   console.log(`    rebound+physical -> ${b.archetype} (${b.tier})`);
   assert(
     ["Glass Cleaner", "Enforcer"].includes(b.archetype),
     "rebound/physical big gets a big-man archetype",
   );
+}
+
+console.log("\n=== Gameday reserves: exact-team-count + normalized strength ===");
+{
+  // 16 players @ team size 6 -> 2 teams of 8 (6 core + 2 reserves each), NOT
+  // 3 teams of ~5 like the old round-to-nearest v1 behavior would give.
+  const { numTeams, sizes } = gamedayTeamSizes(16, 6);
+  assert(numTeams === 2, "16 players / size 6 -> 2 teams (not 3)");
+  assert(
+    sizes.every((s) => s === 8),
+    "both teams get 8 players (6 core + 2 reserves each)",
+  );
+
+  const players = makePlayers(16, 77);
+  const res = balanceTeams(players, 6, [], 11, sizes);
+  assert(
+    res.teams.every((t) => t.length === 8),
+    "balancer respects the explicit reserve-aware sizes",
+  );
+  // Per-team MEANS (not sums) is what makes extra reserves not look like an
+  // artificial strength advantage — verify per-dimension spread stays low
+  // even though every team already carries 2 "extra" reserve players.
+  let maxSpread = 0;
+  for (let d = 0; d < 9; d++) maxSpread = Math.max(maxSpread, dimSpread(res.teams, players, d));
+  assert(maxSpread < 0.25, "teams stay balanced (mean-based) despite reserves");
+}
+
+console.log("\n=== Re-roll variety ===");
+{
+  // Team generation samples from a pool of near-optimal splits, so any ONE
+  // pair of seeds might occasionally coincide — the real requirement is that
+  // re-rolling repeatedly actually produces more than one outcome. Draw 8
+  // rerolls and require at least 2 distinct splits among them.
+  const players = makePlayers(12, 500);
+  const teamsOf = (r: ReturnType<typeof balanceTeams>) =>
+    r.teams.map((t) => [...t].sort().join(",")).sort().join("|");
+  const seen = new Set<string>();
+  let allEvenlySized = true;
+  for (let i = 0; i < 8; i++) {
+    const r = balanceTeams(players, 3, [], Math.floor(Math.random() * 1e9) + i);
+    seen.add(teamsOf(r));
+    if (!r.teams.every((t) => t.length === 3)) allEvenlySized = false;
+  }
+  console.log(`    distinct splits across 8 rerolls: ${seen.size}`);
+  assert(seen.size >= 2, "re-rolling the same roster produces more than one outcome");
+  assert(allEvenlySized, "every reroll is still evenly sized");
+}
+
+console.log("\n=== Gender as a soft balancing dimension ===");
+{
+  // 8 players, alternating gender in the raw feature vector's last
+  // dimension (mirrors how buildFeatureVectors appends genderDim*0.4) —
+  // confirms the optimizer spreads it across teams like it does height.
+  const r = rng(3);
+  const players: BalancePlayer[] = Array.from({ length: 8 }, (_, i) => ({
+    id: `p${i}`,
+    features: [...Array.from({ length: 8 }, () => r()), i % 2 === 0 ? 1 : 0],
+  }));
+  const res = balanceTeams(players, 4, [], 9);
+  const spread = dimSpread(res.teams, players, 8);
+  assert(spread < 0.3, "gender dimension is spread evenly across teams, not clumped");
 }
 
 console.log("");

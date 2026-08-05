@@ -39,7 +39,11 @@ export async function middleware(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
   const isAuthPage = path === "/login" || path === "/signup";
-  const isPublic = isAuthPage || path === "/" || path.startsWith("/manifest");
+  // /api/cron/* routes have their own CRON_SECRET bearer-token check and are
+  // hit by Vercel Cron with no browser session cookie at all — never gate
+  // them behind the login redirect.
+  const isPublic =
+    isAuthPage || path === "/" || path.startsWith("/manifest") || path.startsWith("/api/cron");
 
   // Gate the app behind auth: unauthenticated users go to /login.
   if (!user && !isPublic) {

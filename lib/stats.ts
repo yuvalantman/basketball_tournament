@@ -1,72 +1,86 @@
 // Server-side aggregation of anonymous peer ratings into per-player stats and
 // balancing feature vectors. Pure functions: callers feed in the raw rows
 // (read with the service role) and decide what to expose to the client.
+//
+// No per-sport branching here — every sport is just SPORTS[sport].params
+// (see lib/sports.ts), each with its own weight + scale. "No minimum
+// ratings" falls out naturally: score01 renormalizes weights over only the
+// attributes that were actually rated, so a player rated on one attribute
+// alone still gets a fair score instead of being dragged toward 0.
 
-import { RATING_PARAMS, type RatingMode, type RatingParam } from "./constants";
-import { computeArchetype, singleScoreArchetype, type Averages } from "./archetype";
-import type { PlayerStats, Profile } from "./types";
+import { computeArchetype } from "./archetype";
+import { skillParams, type SportConfig } from "./sports";
+import type { DisplayOptions, Gender } from "./constants";
+import type { PlayerCard } from "./types";
 
 export type RatingRow = {
+  rater_id: string;
   ratee_id: string;
-  shooting: number | null;
-  scoring: number | null;
-  dribbling: number | null;
-  rebounding: number | null;
-  passing: number | null;
-  defending: number | null;
-  physicality: number | null;
-  athleticism: number | null;
-  single_score: number | null;
+  values: Record<string, number>;
+  weight: number;
 };
 
 export type PlayerAggregate = {
   userId: string;
+  // Per-attribute weighted mean (on the attribute's own raw scale) + a plain
+  // headcount of distinct ratings that included this attribute (NOT
+  // weight-inflated — weight only affects the mean, the count is for
+  // display/inspection).
+  perParam: Record<string, { weightedMean: number; raterCount: number }>;
+  // Weighted, cross-attribute score, 0..1, renormalized over present attrs.
+  score01: number | null;
+  // Distinct raters who rated this player on ANYTHING.
   raterCount: number;
-  averages: Averages | null; // 8-param mode
-  singleAvg: number | null; // single mode
 };
 
-// Average each param over the raters who scored it (anonymous; we never track
-// who gave what — only the ratee matters here).
 export function aggregateRatings(
-  ratings: RatingRow[],
-  mode: RatingMode,
+  rows: RatingRow[],
+  sport: SportConfig,
 ): Map<string, PlayerAggregate> {
   const byRatee = new Map<string, RatingRow[]>();
-  for (const r of ratings) {
+  for (const r of rows) {
     const arr = byRatee.get(r.ratee_id) ?? [];
     arr.push(r);
     byRatee.set(r.ratee_id, arr);
   }
 
   const out = new Map<string, PlayerAggregate>();
-  for (const [userId, rows] of byRatee) {
-    if (mode === "single") {
-      const vals = rows
-        .map((r) => r.single_score)
-        .filter((v): v is number => v != null);
-      out.set(userId, {
-        userId,
-        raterCount: vals.length,
-        averages: null,
-        singleAvg: vals.length
-          ? vals.reduce((a, b) => a + b, 0) / vals.length
-          : null,
-      });
-    } else {
-      const averages = {} as Averages;
-      let raterCount = 0;
-      for (const p of RATING_PARAMS) {
-        const vals = rows
-          .map((r) => r[p])
-          .filter((v): v is number => v != null);
-        averages[p] = vals.length
-          ? vals.reduce((a, b) => a + b, 0) / vals.length
-          : 0;
-        raterCount = Math.max(raterCount, vals.length);
+  for (const [userId, ratingsForPlayer] of byRatee) {
+    const perParam: Record<string, { weightedMean: number; raterCount: number }> = {};
+    let weightedScoreSum = 0;
+    let weightSumUsed = 0;
+    const raterIds = new Set<string>();
+
+    for (const param of sport.params) {
+      let sumWV = 0;
+      let sumW = 0;
+      let count = 0;
+      for (const row of ratingsForPlayer) {
+        const v = row.values[param.key];
+        if (v == null) continue;
+        sumWV += v * row.weight;
+        sumW += row.weight;
+        count++;
       }
-      out.set(userId, { userId, raterCount, averages, singleAvg: null });
+      if (count > 0) {
+        const mean = sumWV / sumW;
+        perParam[param.key] = { weightedMean: mean, raterCount: count };
+        const own01 = (mean - param.scaleMin) / (param.scaleMax - param.scaleMin);
+        weightedScoreSum += param.weight * own01;
+        weightSumUsed += param.weight;
+      }
     }
+
+    for (const row of ratingsForPlayer) {
+      if (Object.keys(row.values).length > 0) raterIds.add(row.rater_id);
+    }
+
+    out.set(userId, {
+      userId,
+      perParam,
+      score01: weightSumUsed > 0 ? weightedScoreSum / weightSumUsed : null,
+      raterCount: raterIds.size,
+    });
   }
   return out;
 }
@@ -81,112 +95,151 @@ function normalize(values: number[]): number[] {
 
 export type FeatureVector = { id: string; features: number[] };
 
-// Build balancing feature vectors: every rated dimension PLUS height, each
-// normalized across the pool so they're comparable. This is what makes the
-// balancer spread shooters/tall players evenly, not just total strength.
+export type BalanceablePlayer = {
+  id: string;
+  height_cm: number | null;
+  gender: Gender | null;
+};
+
+// Build balancing feature vectors: every rated dimension, PLUS the player's
+// overall score01, PLUS height, PLUS gender — all normalized across the pool
+// so they're comparable. Height/gender are soft-balanced (spread evenly
+// across team means) at reduced weight, same treatment as v1's height-only
+// dimension.
 export function buildFeatureVectors(
-  players: Profile[],
+  players: BalanceablePlayer[],
   aggregates: Map<string, PlayerAggregate>,
-  mode: RatingMode,
+  sport: SportConfig,
 ): FeatureVector[] {
   const heights = players.map((p) => p.height_cm ?? 0);
   const normHeights = normalize(heights);
+  const genderDim = players.map((p) => (p.gender === "M" ? 1 : p.gender === "F" ? 0 : 0.5));
 
-  if (mode === "single") {
-    const scores = players.map(
-      (p) => aggregates.get(p.id)?.singleAvg ?? 0,
-    );
-    const normScores = normalize(scores);
-    return players.map((p, i) => ({
-      id: p.id,
-      features: [normScores[i], normHeights[i] * 0.6], // height weighted a bit lower
-    }));
-  }
-
-  // 8-param mode: normalize each param column across the pool.
-  const columns: Record<RatingParam, number[]> = {} as Record<RatingParam, number[]>;
-  for (const param of RATING_PARAMS) {
-    columns[param] = normalize(
-      players.map((p) => aggregates.get(p.id)?.averages?.[param] ?? 0),
+  const paramColumns: Record<string, number[]> = {};
+  for (const param of sport.params) {
+    const mid = (param.scaleMin + param.scaleMax) / 2;
+    paramColumns[param.key] = normalize(
+      players.map((p) => aggregates.get(p.id)?.perParam[param.key]?.weightedMean ?? mid),
     );
   }
+
+  const overallColumn = normalize(players.map((p) => aggregates.get(p.id)?.score01 ?? 0.5));
+
   return players.map((p, i) => ({
     id: p.id,
     features: [
-      ...RATING_PARAMS.map((param) => columns[param][i]),
+      ...sport.params.map((param) => paramColumns[param.key][i]),
+      overallColumn[i],
       normHeights[i] * 0.6,
+      genderDim[i] * 0.4,
     ],
   }));
 }
 
-// Build the display payload, respecting stats_visibility + whether the viewer
-// is the creator. Numbers are withheld unless the mode/role allows them.
-export function buildPlayerStats(
-  players: Profile[],
-  aggregates: Map<string, PlayerAggregate>,
-  mode: RatingMode,
-  visibility: "creator_only" | "everyone" | "radar_normalized",
-  isCreator: boolean,
-): PlayerStats[] {
-  // Pre-compute normalized columns for radar shapes (8-param mode only).
-  const normColumns: Record<RatingParam, number[]> = {} as Record<RatingParam, number[]>;
-  if (mode !== "single") {
-    for (const param of RATING_PARAMS) {
-      normColumns[param] = normalize(
-        players.map((p) => aggregates.get(p.id)?.averages?.[param] ?? 0),
-      );
-    }
-  }
+export type CardSubject = {
+  id: string;
+  username: string;
+  display_name: string;
+  photo_url: string | null;
+  height_cm: number | null;
+  gender: Gender | null;
+};
 
-  const showNumbers = visibility === "everyone" || isCreator;
+// Build the display payload, gating each visual block independently off the
+// group's display_options. Numbers are always the 70–100 scale, never a raw
+// 1-5/1-10 value.
+export function buildPlayerCards(
+  players: CardSubject[],
+  aggregates: Map<string, PlayerAggregate>,
+  sport: SportConfig,
+  displayOptions: DisplayOptions,
+  scoreToDisplay: (score01: number) => number,
+): PlayerCard[] {
+  // Pool-normalized columns, for the radar shape only (relative shape within
+  // this group — distinct from the per-attribute "averages" display, which
+  // uses the attribute's OWN scale, not a pool-relative one).
+  const poolColumns: Record<string, number[]> = {};
+  for (const param of sport.params) {
+    const mid = (param.scaleMin + param.scaleMax) / 2;
+    poolColumns[param.key] = normalize(
+      players.map((p) => aggregates.get(p.id)?.perParam[param.key]?.weightedMean ?? mid),
+    );
+  }
 
   return players.map((p, idx) => {
     const agg = aggregates.get(p.id);
-    const base = {
+    const base: PlayerCard = {
       user_id: p.id,
       username: p.username,
       display_name: p.display_name,
       photo_url: p.photo_url,
       height_cm: p.height_cm,
-      rating_mode: mode,
-      averages: null as Record<string, number> | null,
-      overall: null as number | null,
-      normalized: null as Record<string, number> | null,
-      archetype: null as string | null,
-      archetype_tier: null as string | null,
-      best_param: null as string | null,
-      worst_param: null as string | null,
+      gender: p.gender,
+      sport: sport.id,
+      averages: null,
+      overall: null,
+      normalized: null,
+      archetype: null,
+      archetype_tier: null,
+      best_param: null,
+      worst_param: null,
+      raterCount: agg?.raterCount ?? 0,
     };
 
     if (!agg || agg.raterCount === 0) return base;
 
-    if (mode === "single") {
-      const a = singleScoreArchetype(agg.singleAvg ?? 0);
-      base.archetype = a.archetype;
-      base.archetype_tier = a.tier;
-      if (showNumbers) base.overall = agg.singleAvg;
-      return base;
+    if (displayOptions.overall && agg.score01 != null) {
+      base.overall = scoreToDisplay(agg.score01);
     }
 
-    const arch = computeArchetype(agg.averages!);
-    base.archetype = arch.archetype;
-    base.archetype_tier = arch.tier;
-    // best/worst skill labels are always safe to show (no numbers).
-    base.best_param = arch.bestParam;
-    base.worst_param = arch.worstParam;
-
-    if (showNumbers) {
-      base.averages = { ...agg.averages };
-      base.overall = arch.overall;
+    if (displayOptions.averages) {
+      const averages: Record<string, number> = {};
+      for (const param of sport.params) {
+        const entry = agg.perParam[param.key];
+        if (!entry) continue;
+        const own01 = (entry.weightedMean - param.scaleMin) / (param.scaleMax - param.scaleMin);
+        averages[param.key] = scoreToDisplay(own01);
+      }
+      base.averages = averages;
     }
-    if (visibility === "radar_normalized" || showNumbers) {
-      // radar shape (0..1) — no raw numbers leak through this.
+
+    if (displayOptions.radar) {
       const normalized: Record<string, number> = {};
-      for (const param of RATING_PARAMS) {
-        normalized[param] = normColumns[param][idx];
+      for (const param of sport.params) {
+        normalized[param.key] = poolColumns[param.key][idx];
       }
       base.normalized = normalized;
     }
+
+    if (displayOptions.best_worst || displayOptions.archetype) {
+      const skills = skillParams(sport.id).map((sp) => sp.key);
+      // Compare on each skill's OWN scale (0..1) so mixed-scale sports
+      // (e.g. a 1-10 Overall next to 1-5 skills) never bias the comparison
+      // — but archetype/best-worst only ever look at skill params anyway.
+      const rawAverages: Record<string, number> = {};
+      for (const key of skills) {
+        rawAverages[key] = agg.perParam[key]?.weightedMean ?? 0;
+      }
+      const hasAnySkillRating = skills.some((k) => agg.perParam[k]);
+      if (hasAnySkillRating) {
+        if (displayOptions.best_worst) {
+          let bestKey = skills[0];
+          let worstKey = skills[0];
+          for (const k of skills) {
+            if (rawAverages[k] > rawAverages[bestKey]) bestKey = k;
+            if (rawAverages[k] < rawAverages[worstKey]) worstKey = k;
+          }
+          base.best_param = bestKey;
+          base.worst_param = worstKey;
+        }
+        if (displayOptions.archetype && sport.hasArchetype) {
+          const arch = computeArchetype(rawAverages, sport.id);
+          base.archetype = arch.archetype;
+          base.archetype_tier = arch.tier;
+        }
+      }
+    }
+
     return base;
   });
 }

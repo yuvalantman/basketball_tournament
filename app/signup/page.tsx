@@ -6,12 +6,14 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { usernameToEmail, isValidUsername, normalizeUsername } from "@/lib/username";
 import { Button, Input, Label, Spinner, Avatar } from "@/components/ui";
+import { GENDER_LABELS, type Gender } from "@/lib/constants";
 
 export default function SignupPage() {
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
+  const [gender, setGender] = useState<Gender | null>(null);
   const [heightCm, setHeightCm] = useState("");
   const [weightKg, setWeightKg] = useState("");
   const [photo, setPhoto] = useState<File | null>(null);
@@ -36,6 +38,10 @@ export default function SignupPage() {
     }
     if (password.length < 6) {
       setError("Password must be at least 6 characters.");
+      return;
+    }
+    if (!gender) {
+      setError("Please select a gender.");
       return;
     }
 
@@ -86,6 +92,7 @@ export default function SignupPage() {
       id: userId,
       username: uname,
       display_name: displayName.trim() || uname,
+      gender,
       height_cm: heightCm ? Number(heightCm) : null,
       weight_kg: weightKg ? Number(weightKg) : null,
       photo_url: photoUrl,
@@ -155,6 +162,25 @@ export default function SignupPage() {
             placeholder="at least 6 characters"
             required
           />
+        </div>
+        <div>
+          <Label>Gender</Label>
+          <div className="flex gap-2">
+            {(Object.keys(GENDER_LABELS) as Gender[]).map((g) => (
+              <button
+                key={g}
+                type="button"
+                onClick={() => setGender(g)}
+                className={`flex-1 rounded-xl py-2.5 text-sm font-semibold border transition ${
+                  gender === g
+                    ? "bg-[var(--primary)] text-[var(--primary-foreground)] border-[var(--primary)]"
+                    : "bg-[var(--surface-2)] border-[var(--border)]"
+                }`}
+              >
+                {GENDER_LABELS[g]}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>

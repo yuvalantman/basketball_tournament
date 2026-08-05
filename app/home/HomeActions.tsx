@@ -3,15 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Card, Input, Label, Spinner } from "@/components/ui";
-import {
-  RATING_MODE_LABELS,
-  TEAM_SIZES,
-  VISIBILITY_LABELS,
-  type RatingMode,
-  type StatsVisibility,
-  type TeamSize,
-} from "@/lib/constants";
-import { createTournament, joinTournament } from "@/app/actions/tournament";
+import { SPORT_IDS, SPORT_LABELS, type SportId } from "@/lib/sports";
+import { createGroup, joinGroup } from "@/app/actions/group";
 
 export function HomeActions() {
   const [mode, setMode] = useState<"none" | "create" | "join">("none");
@@ -19,17 +12,10 @@ export function HomeActions() {
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3">
-        <Button
-          size="lg"
-          onClick={() => setMode(mode === "create" ? "none" : "create")}
-        >
-          + New tournament
+        <Button size="lg" onClick={() => setMode(mode === "create" ? "none" : "create")}>
+          + New group
         </Button>
-        <Button
-          size="lg"
-          variant="secondary"
-          onClick={() => setMode(mode === "join" ? "none" : "join")}
-        >
+        <Button size="lg" variant="secondary" onClick={() => setMode(mode === "join" ? "none" : "join")}>
           Join by code
         </Button>
       </div>
@@ -42,24 +28,17 @@ export function HomeActions() {
 function CreateForm() {
   const router = useRouter();
   const [name, setName] = useState("");
-  const [ratingMode, setRatingMode] = useState<RatingMode>("eight");
-  const [visibility, setVisibility] = useState<StatsVisibility>("creator_only");
-  const [teamSize, setTeamSize] = useState<TeamSize>(3);
+  const [sport, setSport] = useState<SportId>("basketball");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function submit() {
     setLoading(true);
     setError(null);
-    const res = await createTournament({
-      name,
-      rating_mode: ratingMode,
-      stats_visibility: visibility,
-      team_size: teamSize,
-    });
+    const res = await createGroup({ name, sport });
     if (res.ok) {
       const id = (res.data as { id: string }).id;
-      router.push(`/tournament/${id}`);
+      router.push(`/group/${id}`);
     } else {
       setError(res.error);
       setLoading(false);
@@ -69,56 +48,24 @@ function CreateForm() {
   return (
     <Card className="space-y-4 mt-1">
       <div>
-        <Label>Tournament name</Label>
-        <Input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Friday Night Hoops"
-        />
+        <Label>Group name</Label>
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Friday Night Hoops" />
       </div>
 
       <div>
-        <Label>Rating style</Label>
-        <div className="space-y-2">
-          {(Object.keys(RATING_MODE_LABELS) as RatingMode[]).map((m) => (
-            <ChoiceRow
-              key={m}
-              selected={ratingMode === m}
-              onClick={() => setRatingMode(m)}
-              label={RATING_MODE_LABELS[m]}
-            />
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <Label>Who sees the stats after rating?</Label>
-        <div className="space-y-2">
-          {(Object.keys(VISIBILITY_LABELS) as StatsVisibility[]).map((v) => (
-            <ChoiceRow
-              key={v}
-              selected={visibility === v}
-              onClick={() => setVisibility(v)}
-              label={VISIBILITY_LABELS[v]}
-            />
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <Label>Players per team (you can change this later)</Label>
-        <div className="flex gap-2">
-          {TEAM_SIZES.map((s) => (
+        <Label>Sport (can&apos;t be changed later)</Label>
+        <div className="grid grid-cols-3 gap-2">
+          {SPORT_IDS.map((s) => (
             <button
               key={s}
-              onClick={() => setTeamSize(s)}
-              className={`flex-1 rounded-xl py-3 font-semibold border transition ${
-                teamSize === s
+              onClick={() => setSport(s)}
+              className={`rounded-xl py-3 text-sm font-semibold border transition ${
+                sport === s
                   ? "bg-[var(--primary)] text-[var(--primary-foreground)] border-[var(--primary)]"
                   : "bg-[var(--surface-2)] border-[var(--border)]"
               }`}
             >
-              {s}v{s}
+              {SPORT_LABELS[s]}
             </button>
           ))}
         </div>
@@ -126,7 +73,7 @@ function CreateForm() {
 
       {error && <p className="text-red-400 text-sm">{error}</p>}
       <Button className="w-full" size="lg" onClick={submit} disabled={loading}>
-        {loading ? <Spinner /> : "Create tournament"}
+        {loading ? <Spinner /> : "Create group"}
       </Button>
     </Card>
   );
@@ -141,10 +88,10 @@ function JoinForm() {
   async function submit() {
     setLoading(true);
     setError(null);
-    const res = await joinTournament(code);
+    const res = await joinGroup(code);
     if (res.ok) {
       const id = (res.data as { id: string }).id;
-      router.push(`/tournament/${id}`);
+      router.push(`/group/${id}`);
     } else {
       setError(res.error);
       setLoading(false);
@@ -153,7 +100,7 @@ function JoinForm() {
 
   return (
     <Card className="space-y-3 mt-1">
-      <Label>Enter tournament code</Label>
+      <Label>Enter group code</Label>
       <Input
         value={code}
         onChange={(e) => setCode(e.target.value.toUpperCase())}
@@ -166,28 +113,5 @@ function JoinForm() {
         {loading ? <Spinner /> : "Join"}
       </Button>
     </Card>
-  );
-}
-
-function ChoiceRow({
-  selected,
-  onClick,
-  label,
-}: {
-  selected: boolean;
-  onClick: () => void;
-  label: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`w-full text-left rounded-xl px-3 py-2.5 text-sm border transition ${
-        selected
-          ? "bg-[var(--primary)]/15 border-[var(--primary)] text-[var(--foreground)]"
-          : "bg-[var(--surface-2)] border-[var(--border)] text-[var(--muted)]"
-      }`}
-    >
-      {label}
-    </button>
   );
 }

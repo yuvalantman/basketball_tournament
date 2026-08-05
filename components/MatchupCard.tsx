@@ -4,22 +4,32 @@ import { useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { toPng } from "html-to-image";
 import { Avatar } from "@/components/ui";
-import { cmToFeet, overallTo100 } from "@/lib/constants";
-import type { PlayerStats, Profile, Team } from "@/lib/types";
+import { formatHeight } from "@/lib/constants";
+import type { Participant, PlayerCard, Team } from "@/lib/types";
 
-function teamAvgHeight(members: Profile[]): string {
-  const hs = members.map((m) => m.height_cm).filter((h): h is number => !!h);
-  if (!hs.length) return "—";
-  return cmToFeet(Math.round(hs.reduce((a, b) => a + b, 0) / hs.length));
+function pName(p: Participant): string {
+  return p.kind === "member" ? p.profile.display_name : p.guest.name;
+}
+function pPhoto(p: Participant): string | null {
+  return p.kind === "member" ? p.profile.photo_url : p.guest.photo_url;
+}
+function pHeight(p: Participant): number | null {
+  return p.kind === "member" ? p.profile.height_cm : p.guest.height_cm;
 }
 
-function teamOverall(members: Profile[], stats: Map<string, PlayerStats>): number | null {
-  // Average each player's 70–100 OVR into a team OVR on the same scale.
+function teamAvgHeight(members: Participant[]): string {
+  const hs = members.map(pHeight).filter((h): h is number => !!h);
+  if (!hs.length) return "—";
+  return formatHeight(Math.round(hs.reduce((a, b) => a + b, 0) / hs.length));
+}
+
+// Guests have no PlayerCard entry (cards are keyed by group member id) — they
+// simply don't contribute an OVR/archetype to the matchup card, which is
+// fine since the card is a fun visual, not the source of truth for stats.
+function teamOverall(members: Participant[], cards: Map<string, PlayerCard>): number | null {
   const ovrs = members
-    .map((m) => {
-      const s = stats.get(m.id);
-      return s?.overall != null ? overallTo100(s.overall, s.rating_mode) : null;
-    })
+    .filter((m): m is Extract<Participant, { kind: "member" }> => m.kind === "member")
+    .map((m) => cards.get(m.id)?.overall)
     .filter((v): v is number => v != null);
   if (!ovrs.length) return null;
   return Math.round(ovrs.reduce((a, b) => a + b, 0) / ovrs.length);
@@ -30,14 +40,14 @@ export function MatchupCard({
   onClose,
   teamA,
   teamB,
-  stats,
+  cards,
   label,
 }: {
   open: boolean;
   onClose: () => void;
   teamA: Team | null;
   teamB: Team | null;
-  stats: Map<string, PlayerStats>;
+  cards: Map<string, PlayerCard>;
   label?: string;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
@@ -93,16 +103,13 @@ export function MatchupCard({
           </div>
 
           <div className="flex-1 flex flex-col px-3 py-3 max-w-md mx-auto w-full min-h-0">
-            <div
-              ref={cardRef}
-              className="relative flex-1 rounded-2xl overflow-hidden min-h-0"
-            >
-              {/* Basketball court backdrop */}
+            <div ref={cardRef} className="relative flex-1 rounded-2xl overflow-hidden min-h-0">
+              {/* Basketball court backdrop (kept generic/decorative for every sport for now) */}
               <CourtBackdrop />
 
               {/* Foreground: one team per half + center VS */}
               <div className="absolute inset-0 flex flex-col">
-                <TeamHalf team={teamA} stats={stats} side="top" />
+                <TeamHalf team={teamA} cards={cards} side="top" />
 
                 <motion.div
                   className="relative flex flex-col items-center justify-center py-1 shrink-0"
@@ -120,7 +127,7 @@ export function MatchupCard({
                   </span>
                 </motion.div>
 
-                <TeamHalf team={teamB} stats={stats} side="bottom" />
+                <TeamHalf team={teamB} cards={cards} side="bottom" />
               </div>
             </div>
 
@@ -142,12 +149,7 @@ export function MatchupCard({
 // Vertical full-court SVG (two hoops, center circle, keys, 3-pt arcs).
 function CourtBackdrop() {
   return (
-    <svg
-      className="absolute inset-0 h-full w-full"
-      viewBox="0 0 380 660"
-      preserveAspectRatio="xMidYMid slice"
-      aria-hidden
-    >
+    <svg className="absolute inset-0 h-full w-full" viewBox="0 0 380 660" preserveAspectRatio="xMidYMid slice" aria-hidden>
       <defs>
         <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="#c8843d" />
@@ -156,13 +158,7 @@ function CourtBackdrop() {
         </linearGradient>
       </defs>
       <rect x="0" y="0" width="380" height="660" fill="url(#wood)" />
-      <g
-        fill="none"
-        stroke="#fdf3e3"
-        strokeOpacity="0.6"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-      >
+      <g fill="none" stroke="#fdf3e3" strokeOpacity="0.6" strokeWidth="2.5" strokeLinecap="round">
         {/* boundary */}
         <rect x="14" y="14" width="352" height="632" rx="2" />
         {/* center line + circle */}
@@ -182,23 +178,15 @@ function CourtBackdrop() {
         <circle cx="190" cy="508" r="44" />
         <line x1="164" y1="614" x2="216" y2="614" />
         <circle cx="190" cy="606" r="8" />
-        <path d="M 56 646 L 56 544 A 150 150 0 0 1 324 544 L 324 646" />
+        <path d="M 56 646 L 56 544 A 150 150 0 0 1 324 646 L 324 646" />
       </g>
     </svg>
   );
 }
 
-function TeamHalf({
-  team,
-  stats,
-  side,
-}: {
-  team: Team;
-  stats: Map<string, PlayerStats>;
-  side: "top" | "bottom";
-}) {
+function TeamHalf({ team, cards, side }: { team: Team; cards: Map<string, PlayerCard>; side: "top" | "bottom" }) {
   const members = team.members ?? [];
-  const ovr = teamOverall(members, stats);
+  const ovr = teamOverall(members, cards);
   return (
     <motion.div
       className="flex-1 flex flex-col justify-center px-3 min-h-0"
@@ -210,11 +198,7 @@ function TeamHalf({
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-lg font-black truncate drop-shadow">{team.name}</h2>
           <div className="text-right shrink-0 pl-2">
-            {ovr != null && (
-              <div className="text-2xl font-extrabold text-[var(--primary)] leading-none">
-                {ovr}
-              </div>
-            )}
+            {ovr != null && <div className="text-2xl font-extrabold text-[var(--primary)] leading-none">{ovr}</div>}
             <div className="text-[10px] text-white/60 uppercase">
               {ovr != null ? "OVR · " : ""}avg {teamAvgHeight(members)}
             </div>
@@ -222,25 +206,17 @@ function TeamHalf({
         </div>
         <div className="space-y-1.5">
           {members.map((m) => {
-            const s = stats.get(m.id);
+            const card = m.kind === "member" ? cards.get(m.id) : undefined;
             return (
-              <div key={m.id} className="flex items-center gap-2.5">
-                <Avatar src={m.photo_url} name={m.display_name} size={32} />
+              <div key={`${m.kind}:${m.id}`} className="flex items-center gap-2.5">
+                <Avatar src={pPhoto(m)} name={pName(m)} size={32} />
                 <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-sm truncate leading-tight">
-                    {m.display_name}
-                  </div>
-                  {s?.archetype && (
-                    <div className="text-[10px] text-[var(--accent)] leading-tight">
-                      {s.archetype}
-                    </div>
+                  <div className="font-semibold text-sm truncate leading-tight">{pName(m)}</div>
+                  {card?.archetype && (
+                    <div className="text-[10px] text-[var(--accent)] leading-tight">{card.archetype}</div>
                   )}
                 </div>
-                {m.height_cm && (
-                  <span className="text-[11px] text-white/60">
-                    {cmToFeet(m.height_cm)}
-                  </span>
-                )}
+                {pHeight(m) && <span className="text-[11px] text-white/60">{formatHeight(pHeight(m))}</span>}
               </div>
             );
           })}

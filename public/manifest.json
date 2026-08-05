@@ -1,7 +1,7 @@
 {
-  "name": "Hoops — Tournament Builder",
+  "name": "Hoops — Pickup Groups",
   "short_name": "Hoops",
-  "description": "Create basketball tournaments with friends: ratings, balanced teams, archetypes and brackets.",
+  "description": "Run persistent basketball, soccer, and volleyball groups with friends: ratings, balanced gameday teams, and archetypes.",
   "start_url": "/home",
   "display": "standalone",
   "background_color": "#0a0a0f",

@@ -48,7 +48,7 @@ function LoginForm() {
       <div className="mb-8 text-center">
         <div className="text-5xl mb-2">🏀</div>
         <h1 className="text-3xl font-extrabold tracking-tight">Hoops</h1>
-        <p className="text-[var(--muted)] mt-1">Run your crew&apos;s tournament.</p>
+        <p className="text-[var(--muted)] mt-1">Run your crew&apos;s pickup games.</p>
       </div>
 
       <form onSubmit={onSubmit} className="space-y-4">

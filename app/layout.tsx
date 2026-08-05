@@ -2,9 +2,9 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Hoops — Tournament Builder",
+  title: "Hoops — Pickup Groups",
   description:
-    "Create basketball tournaments with friends: peer ratings, balanced teams, NBA-style archetypes and brackets.",
+    "Run persistent basketball, soccer, and volleyball groups with friends: peer ratings, balanced gameday teams, and archetypes.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,

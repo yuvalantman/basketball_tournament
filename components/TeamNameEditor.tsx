@@ -2,19 +2,19 @@
 
 import { useState } from "react";
 import { Button, Input, Spinner } from "@/components/ui";
-import { renameTeam } from "@/app/actions/tournament";
+import { renameTeam } from "@/app/actions/gameday";
 import type { Team } from "@/lib/types";
 
-// Inline team-name editor. A team member (or the creator) can rename their team
-// at any phase — lobby teams, locked teams, or mid-bracket. Read-only otherwise.
+// Inline team-name editor. A team member (or the gameday's manager) can
+// rename their team any time. Read-only otherwise.
 export function TeamNameEditor({
-  tournamentId,
+  gamedayId,
   team,
   canEdit,
   onDone,
   className = "font-bold text-lg",
 }: {
-  tournamentId: string;
+  gamedayId: string;
   team: Team;
   canEdit: boolean;
   onDone: () => void;
@@ -34,7 +34,7 @@ export function TeamNameEditor({
     }
     setBusy(true);
     setError(null);
-    const res = await renameTeam(tournamentId, team.id, clean);
+    const res = await renameTeam(gamedayId, team.id, clean);
     if (res.ok) {
       setEditing(false);
       onDone();

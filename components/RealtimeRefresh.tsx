@@ -4,46 +4,77 @@ import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-// Subscribes to tournament-scoped table changes and refreshes the server
-// components (roster, teams, games, status…) so everyone sees updates live —
-// players joining, teams dropping, scores going in — without manual reload.
-// RLS still applies, so a client only receives changes it's allowed to read.
-export function RealtimeRefresh({ tournamentId }: { tournamentId: string }) {
+function useDebouncedRefresh() {
   const router = useRouter();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  return () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => router.refresh(), 250);
+  };
+}
+
+// Subscribes to group-scoped table changes (roster, gamedays list, group
+// settings) so everyone sees updates live. RLS still applies. Ratings are
+// deliberately NOT subscribed — they're private/anonymous.
+export function GroupRealtimeRefresh({ groupId }: { groupId: string }) {
+  const refresh = useDebouncedRefresh();
 
   useEffect(() => {
     const supabase = createClient();
-
-    // Coalesce bursts of changes into a single refresh.
-    const refresh = () => {
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(() => router.refresh(), 250);
-    };
-
     const scoped = (table: string) => ({
       event: "*" as const,
       schema: "public",
       table,
-      filter: `tournament_id=eq.${tournamentId}`,
+      filter: `group_id=eq.${groupId}`,
     });
 
     const channel = supabase
-      .channel(`tournament:${tournamentId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "tournaments", filter: `id=eq.${tournamentId}` }, refresh)
-      .on("postgres_changes", scoped("tournament_players"), refresh)
+      .channel(`group:${groupId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "groups", filter: `id=eq.${groupId}` }, refresh)
+      .on("postgres_changes", scoped("group_players"), refresh)
+      .on("postgres_changes", scoped("gamedays"), refresh)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupId]);
+
+  return null;
+}
+
+// Subscribes to one gameday's scoped tables (participants, waitlist, guests,
+// restrictions, teams/team_members) so the roster/teams view stays live.
+export function GamedayRealtimeRefresh({ gamedayId }: { gamedayId: string }) {
+  const refresh = useDebouncedRefresh();
+
+  useEffect(() => {
+    const supabase = createClient();
+    const scoped = (table: string) => ({
+      event: "*" as const,
+      schema: "public",
+      table,
+      filter: `gameday_id=eq.${gamedayId}`,
+    });
+
+    const channel = supabase
+      .channel(`gameday:${gamedayId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "gamedays", filter: `id=eq.${gamedayId}` }, refresh)
+      .on("postgres_changes", scoped("gameday_participants"), refresh)
+      .on("postgres_changes", scoped("gameday_waitlist"), refresh)
+      .on("postgres_changes", scoped("gameday_guests"), refresh)
+      .on("postgres_changes", scoped("gameday_restrictions"), refresh)
       .on("postgres_changes", scoped("teams"), refresh)
-      .on("postgres_changes", scoped("games"), refresh)
-      .on("postgres_changes", scoped("restrictions"), refresh)
-      // team_members has no tournament_id column; listen broadly (RLS scopes it).
+      // team_members has no gameday_id column; listen broadly (RLS scopes it).
       .on("postgres_changes", { event: "*", schema: "public", table: "team_members" }, refresh)
       .subscribe();
 
     return () => {
-      if (timer.current) clearTimeout(timer.current);
       supabase.removeChannel(channel);
     };
-  }, [tournamentId, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gamedayId]);
 
   return null;
 }

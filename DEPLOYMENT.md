@@ -69,17 +69,19 @@ SUPABASE_SERVICE_ROLE_KEY=eyJhbGci...
 NEXT_PUBLIC_APP_EMAIL_DOMAIN=hoops.local
 ```
 
-### Seed a test tournament (optional)
+### Seed test groups (optional)
 With real keys in `.env.local`:
 
 ```bash
 npm run seed
 ```
 
-This creates 8 fake players + a tournament already full of ratings, and prints
-a creator login + a tournament code. Log in as that user and click
-**"Close & build teams"** to instantly see balancing, archetypes, and the
-bracket. (All seeded players share the password `password123`.)
+This creates 8 fake players and one group per sport (basketball, soccer,
+volleyball), each already full of ratings plus a sample gameday (with a
+guest and a waitlisted member). It prints a login and each group's code.
+Log in and open **Game days → Sample Gameday → Generate teams** to instantly
+see balancing and archetypes. (All seeded players share the password
+`password123`.)
 
 You can also verify the core math without any database:
 
@@ -109,11 +111,13 @@ git push -u origin main
 
 1. Go to https://vercel.com/new and **import** your GitHub repo.
 2. Framework preset: **Next.js** (auto-detected). Leave build settings default.
-3. Expand **Environment Variables** and add the same four as in `.env.local`:
+3. Expand **Environment Variables** and add the same five as in `.env.local`:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `NEXT_PUBLIC_APP_EMAIL_DOMAIN` (e.g. `hoops.local`)
+   - `CRON_SECRET` (any long random string — guards the daily gameday-expiry
+     endpoint; Vercel Cron sends it automatically once set)
 4. Click **Deploy**. After ~1 min you get a live URL like
    `https://your-app.vercel.app`.
 
@@ -133,27 +137,29 @@ Send friends the Vercel link. Each person:
    height, weight, photo).
 2. On iPhone Safari / Android Chrome they can **Add to Home Screen** to install
    it like an app — it stays logged in.
-3. You create a tournament and share the **5-letter code**; they tap
-   **Join by code**.
+3. You create a **group** (pick a sport — basketball, soccer, or volleyball)
+   and share the **5-letter code**; they tap **Join by code**.
 
 ---
 
-## How the app flows (creator's controls are the bottom bar)
+## How the app flows
 
-1. **Lobby** — everyone joins by code; you can mark "keep apart" pairs.
-2. **Start rating** — everyone anonymously rates everyone else.
-   Tap **"Who's done?"** to see who's finished (you can't see *how* anyone
-   rated — that's always anonymous).
-3. **Close & build teams** — computes averages, archetypes, and balanced teams
-   (even across every skill + height, honoring your restrictions). Re-roll or
-   swap players if you like.
-4. **Lock teams & start games** — builds the schedule:
-   - 4 teams → semifinals → final (+ 3rd place).
-   - 5+ teams → full round robin (everyone plays everyone once, games to 11),
-     organized into matchdays; top 4 by record advance to a random bracket
-     (semifinals → final). E.g. 6 teams → 5 matchdays, 5 games per team.
-5. **Enter scores** — the bracket auto-advances. Tap **▶ Intro** on any game
-   for the animated VS matchup card.
+1. **Create or join a group** — a group is persistent: it never closes, and
+   the same group is used forever (or until you delete it).
+2. **Rate** — anytime, rate anyone else in the group. Ratings are partial and
+   always editable — only the sport's "Overall" field (soccer/volleyball) is
+   required, everything else is optional. Always anonymous: nobody, not even
+   the group manager, can see who gave what score, only aggregate counts.
+3. **Player cards** — shows whatever the group manager has enabled (overall,
+   per-attribute averages, radar shape, best/worst skill, archetype), always
+   on a 70–100 scale.
+4. **Game days** — any member can spin one up: pick a date, a team size, and
+   who's coming (group members and/or one-off guests). Generate balanced
+   teams (skills, height, gender) with reserves if the numbers don't divide
+   evenly. Re-roll, swap, or manually place players; removing someone
+   auto-promotes the next person on the waiting list. A gameday auto-deletes
+   the day after its date passes (or the creator/manager can delete it
+   anytime) — the group and all ratings live on regardless.
 
 ---
 
@@ -168,4 +174,6 @@ Send friends the Vercel link. Each person:
   (step 1b).
 - **Photos don't upload** → confirm the `avatars` bucket exists (Storage tab);
   re-run `supabase/schema.sql` if needed.
-- **Stats look empty** → stats only appear after you click "Close & build teams".
+- **Player cards look empty** → check the group manager's display settings
+  (Players tab → Group settings) — numbers only show for whichever toggles
+  are enabled, and a player with zero ratings shows nothing either way.

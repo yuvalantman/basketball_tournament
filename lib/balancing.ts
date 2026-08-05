@@ -56,6 +56,25 @@ function teamSizes(numPlayers: number, numTeams: number): number[] {
   return Array.from({ length: numTeams }, (_, i) => base + (i < rem ? 1 : 0));
 }
 
+// Gameday team sizes: unlike teamCountFor/teamSizes above (which rounds to
+// the NEAREST team count, e.g. 16 players @ size 6 -> 3 teams of ~5), a
+// gameday keeps exactly the number of FULL teams the chosen size implies and
+// pushes any remainder in as reserves on top of that (16 @ size 6 -> 2 teams
+// of 8, i.e. 6 core + 2 reserves each). The core balancing optimizer already
+// works on per-team MEANS, not sums, so a team with extra reserves doesn't
+// look artificially stronger/weaker purely from headcount — no change needed
+// there, only in how many players end up on each team.
+export function gamedayTeamSizes(
+  numPlayers: number,
+  teamSize: number,
+): { numTeams: number; sizes: number[] } {
+  const numTeams = Math.max(2, Math.floor(numPlayers / teamSize));
+  const core = Math.floor(numPlayers / numTeams);
+  const remainder = numPlayers - core * numTeams;
+  const sizes = Array.from({ length: numTeams }, (_, i) => core + (i < remainder ? 1 : 0));
+  return { numTeams, sizes };
+}
+
 function cost(
   teams: number[][],
   players: BalancePlayer[],
@@ -146,11 +165,15 @@ export function balanceTeams(
   teamSize: number,
   restrictions: [string, string][],
   seed = 1,
+  // Gamedays pass gamedayTeamSizes(...)'s sizes explicitly (reserve-aware,
+  // exact team count); omitted, falls back to the round-to-nearest v1
+  // behavior (teamCountFor/teamSizes) still used by scripts/test-balance.ts.
+  explicitSizes?: number[],
 ): BalanceResult {
   const n = players.length;
   const dims = players[0]?.features.length ?? 0;
-  const numTeams = teamCountFor(n, teamSize);
-  const sizes = teamSizes(n, numTeams);
+  const numTeams = explicitSizes ? explicitSizes.length : teamCountFor(n, teamSize);
+  const sizes = explicitSizes ?? teamSizes(n, numTeams);
   const restricted = new Set(restrictions.map(([a, b]) => pairKey(a, b)));
 
   // overall score (mean of features) used to seed a snake draft.
@@ -158,22 +181,40 @@ export function balanceTeams(
     p.features.reduce((a, b) => a + b, 0) / (p.features.length || 1),
   );
 
-  let best: { teams: number[][]; cost: number; violations: number } | null = null;
-
-  // Multiple restarts make the local search robust and let re-rolls differ.
+  // Multiple restarts are meant to make re-rolls differ — but empirically,
+  // the pairwise-swap local search is such a strong basin of attraction that
+  // EVERY restart (any starting shuffle) converges to the exact same
+  // partition, regardless of seed (confirmed by testing: 40 restarts, 10
+  // different seeds, identical result every time). So instead of optimizing
+  // the true feature vectors directly on every restart, each restart
+  // optimizes a slightly seeded-jittered copy of them — nudging the search
+  // toward a genuinely different nearby optimum per restart/seed — and we
+  // then score every candidate against the TRUE (unperturbed) cost function,
+  // so quality is never judged by the jittered landscape, only the real one.
+  const candidates: { teams: number[][]; cost: number; violations: number }[] = [];
   const RESTARTS = 40;
+  const JITTER = 0.18;
   for (let r = 0; r < RESTARTS; r++) {
     const rng = mulberry32(seed * 7919 + r * 104729 + 1);
+
+    const jittered: BalancePlayer[] =
+      r === 0
+        ? players // keep one restart on the true landscape as a quality anchor
+        : players.map((p) => ({
+            ...p,
+            features: p.features.map((f) => f + (rng() - 0.5) * JITTER),
+          }));
+    const jitteredOverall = jittered.map(
+      (p) => p.features.reduce((a, b) => a + b, 0) / (p.features.length || 1),
+    );
 
     // Seed: snake draft by overall (restart 0), random order otherwise.
     let order: number[];
     if (r === 0) {
       order = players.map((_, i) => i).sort((a, b) => overall[b] - overall[a]);
     } else {
-      order = shuffle(
-        players.map((_, i) => i),
-        rng,
-      );
+      order = players.map((_, i) => i).sort((a, b) => jitteredOverall[b] - jitteredOverall[a]);
+      order = shuffle(order, rng);
     }
 
     const teams: number[][] = sizes.map(() => []);
@@ -204,13 +245,45 @@ export function balanceTeams(
       }
     }
 
-    const result = optimize(teams, players, restricted, dims);
-    if (!best || result.cost < best.cost) best = result;
-    // Perfect balance with no violations — unlikely to beat, stop early.
-    if (best.violations === 0 && best.cost < 1e-6) break;
+    // Optimize against the (possibly jittered) landscape, then re-score the
+    // resulting partition against the TRUE features for fair comparison.
+    const result = optimize(teams, jittered, restricted, dims);
+    const trueScore = cost(result.teams, players, restricted, dims);
+    candidates.push({ teams: result.teams, cost: trueScore.cost, violations: trueScore.violations });
   }
 
-  const final = best!;
+  // De-duplicate by the actual partition (not just cost) FIRST, keeping each
+  // distinct partition's best score — otherwise whichever partition is
+  // easiest for the local search to reach dominates the candidate pool by
+  // sheer repetition and the "random" pick is really just biased toward it.
+  // Then take an epsilon-pool of the near-optimal DISTINCT partitions and
+  // pick uniformly among them. Any candidate in the pool necessarily still
+  // has zero restriction violations if the best one does (the penalty is
+  // 1000, far above the epsilon window), so this never trades away
+  // restriction correctness for variety.
+  const bestByPartition = new Map<string, { teams: number[][]; cost: number; violations: number }>();
+  for (const c of candidates) {
+    const sig = c.teams.map((t) => [...t].sort().join(",")).sort().join("|");
+    const existing = bestByPartition.get(sig);
+    if (!existing || c.cost < existing.cost) bestByPartition.set(sig, c);
+  }
+  const distinct = [...bestByPartition.values()].sort((a, b) => a.cost - b.cost);
+  const bestCost = distinct[0].cost;
+  const epsilon = Math.max(bestCost * 0.4, 0.02);
+  const pool = distinct.filter((c) => c.cost <= bestCost + epsilon);
+  if (process.env.DEBUG_BALANCE) {
+    console.log(
+      "DEBUG distinct partitions:",
+      distinct.length,
+      "costs:",
+      distinct.map((c) => c.cost.toFixed(4)).join(","),
+      "poolSize=",
+      pool.length,
+    );
+  }
+  const pickRng = mulberry32(seed * 15485863 + 1);
+  const final = pool[Math.floor(pickRng() * pool.length)];
+
   return {
     teams: final.teams.map((t) => t.map((pi) => players[pi].id)),
     cost: final.cost,

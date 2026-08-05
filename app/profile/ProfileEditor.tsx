@@ -4,12 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Avatar, Button, Card, Input, Label, Spinner } from "@/components/ui";
-import { cmToFeet } from "@/lib/constants";
+import { cmToFeet, GENDER_LABELS, type Gender } from "@/lib/constants";
 import type { Profile } from "@/lib/types";
 
 export function ProfileEditor({ profile }: { profile: Profile }) {
   const router = useRouter();
   const [displayName, setDisplayName] = useState(profile.display_name);
+  const [gender, setGender] = useState<Gender | null>(profile.gender);
   const [heightCm, setHeightCm] = useState(profile.height_cm?.toString() ?? "");
   const [weightKg, setWeightKg] = useState(profile.weight_kg?.toString() ?? "");
   const [photoPreview, setPhotoPreview] = useState<string | null>(profile.photo_url);
@@ -47,6 +48,7 @@ export function ProfileEditor({ profile }: { profile: Profile }) {
       .from("profiles")
       .update({
         display_name: displayName.trim() || profile.username,
+        gender,
         height_cm: heightCm ? Number(heightCm) : null,
         weight_kg: weightKg ? Number(weightKg) : null,
         photo_url: photoUrl,
@@ -80,6 +82,24 @@ export function ProfileEditor({ profile }: { profile: Profile }) {
       <div>
         <Label>Display name</Label>
         <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+      </div>
+      <div>
+        <Label>Gender</Label>
+        <div className="flex gap-2">
+          {(Object.keys(GENDER_LABELS) as Gender[]).map((g) => (
+            <button
+              key={g}
+              onClick={() => setGender(g)}
+              className={`flex-1 rounded-xl py-2.5 text-sm font-semibold border transition ${
+                gender === g
+                  ? "bg-[var(--primary)] text-[var(--primary-foreground)] border-[var(--primary)]"
+                  : "bg-[var(--surface-2)] border-[var(--border)]"
+              }`}
+            >
+              {GENDER_LABELS[g]}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>

@@ -1,15 +1,18 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getMyProfile, getMyTournaments } from "@/lib/data";
+import { getMyProfile } from "@/lib/data";
+import { getMyGroups, type GroupSummary } from "@/app/actions/group";
 import { Avatar, Badge, Card } from "@/components/ui";
 import { LogoutButton } from "@/components/LogoutButton";
-import { STATUS_LABELS } from "@/lib/constants";
+import { SPORT_LABELS } from "@/lib/sports";
 import { HomeActions } from "./HomeActions";
 
 export default async function HomePage() {
   const profile = await getMyProfile();
   if (!profile) redirect("/login");
-  const tournaments = await getMyTournaments();
+
+  const res = await getMyGroups();
+  const groups: GroupSummary[] = res.ok ? ((res.data as { groups: GroupSummary[] }).groups ?? []) : [];
 
   return (
     <main className="max-w-md mx-auto w-full px-4 pb-24 pt-6">
@@ -27,25 +30,29 @@ export default async function HomePage() {
       <HomeActions />
 
       <h2 className="text-sm font-semibold text-[var(--muted)] mt-8 mb-3 uppercase tracking-wide">
-        Your tournaments
+        Your groups
       </h2>
 
-      {tournaments.length === 0 ? (
+      {groups.length === 0 ? (
         <Card className="text-center text-[var(--muted)] py-8">
-          No tournaments yet. Create one or join with a code.
+          No groups yet. Create one or join with a code.
         </Card>
       ) : (
         <div className="space-y-3">
-          {tournaments.map((t) => (
-            <Link key={t.id} href={`/tournament/${t.id}`}>
+          {groups.map((g) => (
+            <Link key={g.id} href={`/group/${g.id}`} prefetch>
               <Card className="flex items-center justify-between hover:border-[var(--primary)] transition">
                 <div>
-                  <div className="font-semibold">{t.name}</div>
+                  <div className="font-semibold">{g.name}</div>
                   <div className="text-xs text-[var(--muted)] mt-0.5">
-                    Code <span className="font-mono tracking-widest">{t.code}</span>
+                    {g.memberCount} member{g.memberCount !== 1 ? "s" : ""} · Code{" "}
+                    <span className="font-mono tracking-widest">{g.code}</span>
                   </div>
                 </div>
-                <Badge>{STATUS_LABELS[t.status]}</Badge>
+                <div className="flex flex-col items-end gap-1">
+                  <Badge>{SPORT_LABELS[g.sport]}</Badge>
+                  {g.isManager && <Badge className="bg-[var(--primary)]/15 border-[var(--primary)] text-[var(--primary)]">You manage this</Badge>}
+                </div>
               </Card>
             </Link>
           ))}

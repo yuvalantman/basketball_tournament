@@ -1,19 +1,21 @@
-import { PARAM_LABELS, RATING_PARAMS, type RatingParam } from "./constants";
+import { skillParams, type SportId } from "./sports";
 
-// NBA2K-style archetype derivation from a player's averaged 8-param profile.
-// Works on raw 1..5 averages. Pure function — reused by stats + matchup cards.
+// NBA2K-style archetype derivation from a player's averaged skill profile.
+// Basketball-only (SPORTS[sport].hasArchetype gates every call site) — works
+// on raw skill-scale averages (all of basketball's 8 skills share a 1..5
+// scale, so comparing raw means directly is meaningful; this would need
+// rescaling first for a sport whose skills have mixed scales).
 
-export type Averages = Record<RatingParam, number>;
+export type Averages = Record<string, number>;
 
 export type ArchetypeResult = {
   archetype: string;
-  tier: string; // overall tier label
-  bestParam: RatingParam;
-  worstParam: RatingParam;
-  overall: number; // mean of the 8 params (1..5)
+  tier: string;
+  bestParam: string;
+  worstParam: string;
+  overall: number; // mean of the skill params, on their shared raw scale
 };
 
-// Overall tier from the 1..5 mean.
 function tierFor(overall: number): string {
   if (overall >= 4.3) return "Superstar";
   if (overall >= 3.8) return "Franchise";
@@ -27,8 +29,7 @@ function tierFor(overall: number): string {
 // the player's own average, so archetypes reflect what a player is *known for*.
 type Candidate = {
   name: string;
-  // params that define this archetype + a weight
-  signals: Partial<Record<RatingParam, number>>;
+  signals: Partial<Record<string, number>>;
 };
 
 const CANDIDATES: Candidate[] = [
@@ -43,25 +44,29 @@ const CANDIDATES: Candidate[] = [
   { name: "Athletic Freak", signals: { athleticism: 0.9, physicality: 0.6 } },
   { name: "Two-Way Wing", signals: { defending: 0.6, scoring: 0.5, shooting: 0.4, athleticism: 0.3 } },
   { name: "Three-and-D", signals: { shooting: 0.7, defending: 0.7 } },
-  { name: "Do-It-All", signals: { shooting: 0.3, scoring: 0.3, dribbling: 0.3, rebounding: 0.3, passing: 0.3, defending: 0.3, physicality: 0.3, athleticism: 0.3 } },
+  {
+    name: "Do-It-All",
+    signals: {
+      shooting: 0.3, scoring: 0.3, dribbling: 0.3, rebounding: 0.3,
+      passing: 0.3, defending: 0.3, physicality: 0.3, athleticism: 0.3,
+    },
+  },
 ];
 
-export function computeArchetype(averages: Averages): ArchetypeResult {
-  const vals = RATING_PARAMS.map((p) => averages[p] ?? 0);
-  const overall = vals.reduce((a, b) => a + b, 0) / RATING_PARAMS.length;
+export function computeArchetype(averages: Averages, sport: SportId): ArchetypeResult {
+  const keys = skillParams(sport).map((p) => p.key);
+  const vals = keys.map((k) => averages[k] ?? 0);
+  const overall = vals.reduce((a, b) => a + b, 0) / (keys.length || 1);
 
   // z-ish: how much each param stands out above the player's own mean.
-  const standout: Record<RatingParam, number> = {} as Record<RatingParam, number>;
-  for (const p of RATING_PARAMS) {
-    standout[p] = (averages[p] ?? 0) - overall;
-  }
+  const standout: Record<string, number> = {};
+  for (const k of keys) standout[k] = (averages[k] ?? 0) - overall;
 
   let best: { name: string; score: number } = { name: "Do-It-All", score: -Infinity };
   for (const c of CANDIDATES) {
     let score = 0;
     let weightSum = 0;
-    for (const [param, w] of Object.entries(c.signals) as [RatingParam, number][]) {
-      // Reward both absolute strength and standing out from own baseline.
+    for (const [param, w] of Object.entries(c.signals) as [string, number][]) {
       score += w * ((averages[param] ?? 0) + standout[param] * 1.5);
       weightSum += w;
     }
@@ -69,36 +74,12 @@ export function computeArchetype(averages: Averages): ArchetypeResult {
     if (score > best.score) best = { name: c.name, score };
   }
 
-  // Find best/worst individual param.
-  let bestParam: RatingParam = RATING_PARAMS[0];
-  let worstParam: RatingParam = RATING_PARAMS[0];
-  for (const p of RATING_PARAMS) {
-    if ((averages[p] ?? 0) > (averages[bestParam] ?? 0)) bestParam = p;
-    if ((averages[p] ?? 0) < (averages[worstParam] ?? 0)) worstParam = p;
+  let bestParam = keys[0];
+  let worstParam = keys[0];
+  for (const k of keys) {
+    if ((averages[k] ?? 0) > (averages[bestParam] ?? 0)) bestParam = k;
+    if ((averages[k] ?? 0) < (averages[worstParam] ?? 0)) worstParam = k;
   }
 
-  return {
-    archetype: best.name,
-    tier: tierFor(overall),
-    bestParam,
-    worstParam,
-    overall,
-  };
-}
-
-// For single-score (1..10) mode there are no per-skill params — the archetype
-// is purely a tier label derived from the single overall score.
-export function singleScoreArchetype(score: number): {
-  archetype: string;
-  tier: string;
-} {
-  if (score >= 9) return { archetype: "Superstar", tier: "Superstar" };
-  if (score >= 7.5) return { archetype: "Franchise Player", tier: "Franchise" };
-  if (score >= 6) return { archetype: "Starter", tier: "Starter" };
-  if (score >= 4) return { archetype: "Role Player", tier: "Role Player" };
-  return { archetype: "Benchwarmer", tier: "Benchwarmer" };
-}
-
-export function paramLabel(p: string): string {
-  return PARAM_LABELS[p as RatingParam] ?? p;
+  return { archetype: best.name, tier: tierFor(overall), bestParam, worstParam, overall };
 }

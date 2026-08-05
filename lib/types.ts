@@ -1,85 +1,131 @@
-import type {
-  RatingMode,
-  StatsVisibility,
-  TournamentStatus,
-} from "./constants";
+import type { Gender } from "./constants";
+import type { SportId } from "./sports";
 
 export type Profile = {
   id: string;
   username: string;
   display_name: string;
+  gender: Gender | null;
   height_cm: number | null;
   weight_kg: number | null;
   photo_url: string | null;
   created_at: string;
 };
 
-export type Tournament = {
+export type Group = {
   id: string;
   code: string;
   name: string;
+  sport: SportId;
   creator_id: string;
-  rating_mode: RatingMode;
-  stats_visibility: StatsVisibility;
-  team_size: number;
-  status: TournamentStatus;
+  display_options: {
+    averages: boolean;
+    radar: boolean;
+    overall: boolean;
+    best_worst: boolean;
+    archetype: boolean;
+  };
   created_at: string;
 };
 
-export type TournamentPlayer = {
-  tournament_id: string;
+export type GroupPlayer = {
+  group_id: string;
   user_id: string;
   joined_at: string;
   profile?: Profile;
 };
 
-export type Restriction = {
+// One rater's submission about one ratee, within one group. `values` is
+// sparse — only keys that were actually rated. Never exposed to any client
+// except the rater's own row (RLS) or via server-computed aggregates.
+export type Rating = {
+  group_id: string;
+  rater_id: string;
+  ratee_id: string;
+  values: Record<string, number>;
+  weight: 1 | 2 | 3 | 5;
+  source: "normal" | "manager";
+  updated_at: string;
+};
+
+export type Gameday = {
   id: string;
-  tournament_id: string;
-  player_a: string;
-  player_b: string;
+  group_id: string;
+  creator_id: string;
+  name: string;
+  date: string; // YYYY-MM-DD
+  team_size: number;
+  created_at: string;
+};
+
+export type GamedayGuest = {
+  id: string;
+  gameday_id: string;
+  name: string;
+  gender: Gender | null;
+  height_cm: number | null;
+  photo_url: string | null;
+  created_by: string;
+  created_at: string;
+};
+
+export type ParticipantKind = "member" | "guest";
+
+// A resolved participant — either a group member (profile) or a gameday-only
+// guest — used anywhere the UI needs to render "who is this."
+export type Participant =
+  | { kind: "member"; id: string; profile: Profile }
+  | { kind: "guest"; id: string; guest: GamedayGuest };
+
+export type WaitlistEntry = {
+  gameday_id: string;
+  user_id: string;
+  added_at: string;
+  profile?: Profile;
+  position: number; // 1 = next up
+};
+
+export type GamedayRestriction = {
+  id: string;
+  gameday_id: string;
+  kind: "apart" | "together";
+  a: Participant;
+  b: Participant;
 };
 
 export type Team = {
   id: string;
-  tournament_id: string;
+  gameday_id: string;
   name: string;
   seed: number;
-  members?: Profile[];
+  members?: (Participant & { is_reserve: boolean })[];
 };
 
-export type Game = {
-  id: string;
-  tournament_id: string;
-  stage: "group" | "bracket";
-  round: number;
-  slot: number;
-  team_a: string | null;
-  team_b: string | null;
-  score_a: number | null;
-  score_b: number | null;
-  winner_team_id: string | null;
-  next_game_id: string | null;
-  next_slot: number | null;
-};
-
-// Aggregate stats returned by the get_player_stats RPC. Which fields are
-// populated depends on stats_visibility + whether the caller is the creator.
-export type PlayerStats = {
+// Aggregate stats/score for one player, shaped by the group's display_options
+// and the sport's params. Numbers are always the 70–100 display scale.
+export type PlayerCard = {
   user_id: string;
   username: string;
   display_name: string;
   photo_url: string | null;
   height_cm: number | null;
-  // Full numeric averages (only when allowed to see numbers)
-  averages: Record<string, number> | null;
-  overall: number | null;
-  // Normalized 0..1 per param (for radar shape, no raw numbers)
-  normalized: Record<string, number> | null;
-  // Archetype always present
+  gender: Gender | null;
+  sport: SportId;
+  averages: Record<string, number> | null; // per-attribute, 70-100, gated by display_options.averages
+  overall: number | null; // 70-100, gated by display_options.overall
+  normalized: Record<string, number> | null; // 0..1 per param, for radar shape
   archetype: string | null;
   archetype_tier: string | null;
   best_param: string | null;
   worst_param: string | null;
-  rating_mode: RatingMode;
+  raterCount: number; // how many people have rated this player at all (any attribute)
+};
+
+// Manager-only per-attribute rated-by counts for one player. Counts only —
+// never exposes who rated what.
+export type ManagerInspection = {
+  user_id: string;
+  overallRaterCount: number;
+  perParam: { key: string; label: string; raterCount: number }[];
+  myRating: Record<string, number> | null; // the manager's own rating of this player, if any
 };
