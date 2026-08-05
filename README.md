@@ -1,4 +1,4 @@
-# Hoops 🏀 — Tournament Builder
+# Picked Up 🏀⚽🏐 — Pickup Sports Groups
 
 A mobile-first web app for running a basketball tournament with your friends.
 Players sign up, peer-rate each other, get balanced teams + an NBA2K-style

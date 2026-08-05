@@ -39,11 +39,21 @@ export async function middleware(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
   const isAuthPage = path === "/login" || path === "/signup";
+  // /reset-password is reached via an emailed recovery link — the recovery
+  // token lives in the URL fragment, which browsers never send to the
+  // server, so this middleware can't see it and would otherwise treat the
+  // visitor as logged-out and bounce them to /login before the client JS
+  // gets a chance to exchange that fragment for a session.
   // /api/cron/* routes have their own CRON_SECRET bearer-token check and are
   // hit by Vercel Cron with no browser session cookie at all — never gate
   // them behind the login redirect.
   const isPublic =
-    isAuthPage || path === "/" || path.startsWith("/manifest") || path.startsWith("/api/cron");
+    isAuthPage ||
+    path === "/" ||
+    path === "/forgot-password" ||
+    path === "/reset-password" ||
+    path.startsWith("/manifest") ||
+    path.startsWith("/api/cron");
 
   // Gate the app behind auth: unauthenticated users go to /login.
   if (!user && !isPublic) {

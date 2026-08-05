@@ -4,8 +4,8 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { usernameToEmail } from "@/lib/username";
 import { Button, Input, Label, Spinner } from "@/components/ui";
+import { resolveLoginEmail } from "@/app/actions/auth";
 
 export default function LoginPage() {
   return (
@@ -29,9 +29,17 @@ function LoginForm() {
     e.preventDefault();
     setError(null);
     setLoading(true);
+
+    const resolved = await resolveLoginEmail(username);
+    if (!resolved.ok) {
+      setError(resolved.error);
+      setLoading(false);
+      return;
+    }
+
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithPassword({
-      email: usernameToEmail(username),
+      email: (resolved.data as { email: string }).email,
       password,
     });
     if (error) {
@@ -46,8 +54,9 @@ function LoginForm() {
   return (
     <main className="min-h-dvh flex flex-col justify-center px-6 max-w-md mx-auto w-full">
       <div className="mb-8 text-center">
-        <div className="text-5xl mb-2">🏀</div>
-        <h1 className="text-3xl font-extrabold tracking-tight">Hoops</h1>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/icons/icon.svg" alt="" width={72} height={72} className="mx-auto mb-2 rounded-2xl" />
+        <h1 className="text-3xl font-extrabold tracking-tight">Picked Up</h1>
         <p className="text-[var(--muted)] mt-1">Run your crew&apos;s pickup games.</p>
       </div>
 
@@ -65,7 +74,14 @@ function LoginForm() {
           />
         </div>
         <div>
-          <Label htmlFor="password">Password</Label>
+          <div className="flex items-center justify-between mb-1.5">
+            <Label htmlFor="password" className="mb-0">
+              Password
+            </Label>
+            <Link href="/forgot-password" className="text-xs text-[var(--primary)] font-medium">
+              Forgot password?
+            </Link>
+          </div>
           <Input
             id="password"
             type="password"

@@ -7,9 +7,14 @@ import { Avatar, Button, Card, Input, Label, Spinner } from "@/components/ui";
 import { cmToFeet, GENDER_LABELS, type Gender } from "@/lib/constants";
 import type { Profile } from "@/lib/types";
 
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
 export function ProfileEditor({ profile }: { profile: Profile }) {
   const router = useRouter();
   const [displayName, setDisplayName] = useState(profile.display_name);
+  const [email, setEmail] = useState(profile.email ?? "");
   const [gender, setGender] = useState<Gender | null>(profile.gender);
   const [heightCm, setHeightCm] = useState(profile.height_cm?.toString() ?? "");
   const [weightKg, setWeightKg] = useState(profile.weight_kg?.toString() ?? "");
@@ -32,6 +37,13 @@ export function ProfileEditor({ profile }: { profile: Profile }) {
     setSaved(false);
     const supabase = createClient();
 
+    const cleanEmail = email.trim().toLowerCase();
+    if (cleanEmail && !isValidEmail(cleanEmail)) {
+      setError("Enter a valid email.");
+      setSaving(false);
+      return;
+    }
+
     let photoUrl = profile.photo_url;
     if (photo) {
       const ext = photo.name.split(".").pop() || "jpg";
@@ -44,10 +56,23 @@ export function ProfileEditor({ profile }: { profile: Profile }) {
           .publicUrl;
     }
 
+    // Adding/changing a real email here also becomes this account's actual
+    // sign-in email (needed for "forgot password" to have somewhere to send
+    // a reset link) — updateUser keeps auth.users in sync with profiles.
+    if (cleanEmail && cleanEmail !== (profile.email ?? "")) {
+      const { error: emailErr } = await supabase.auth.updateUser({ email: cleanEmail });
+      if (emailErr) {
+        setError(emailErr.message);
+        setSaving(false);
+        return;
+      }
+    }
+
     const { error } = await supabase
       .from("profiles")
       .update({
         display_name: displayName.trim() || profile.username,
+        email: cleanEmail || null,
         gender,
         height_cm: heightCm ? Number(heightCm) : null,
         weight_kg: weightKg ? Number(weightKg) : null,
@@ -78,6 +103,20 @@ export function ProfileEditor({ profile }: { profile: Profile }) {
       <div>
         <Label>Username</Label>
         <Input value={`@${profile.username}`} disabled />
+      </div>
+      <div>
+        <Label>Email</Label>
+        <Input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="you@example.com"
+        />
+        <p className="text-xs text-[var(--muted)] mt-1">
+          {profile.email
+            ? "Used to send you a password reset link if you ever forget your password."
+            : "Add this so you can use “Forgot password” if you ever get locked out."}
+        </p>
       </div>
       <div>
         <Label>Display name</Label>

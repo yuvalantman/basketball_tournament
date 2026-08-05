@@ -26,6 +26,10 @@ create table if not exists public.profiles (
   height_cm   numeric,
   weight_kg   numeric,
   photo_url   text,
+  -- Real personal email, used as this account's actual Supabase auth email
+  -- (collected at signup) so "forgot password" can deliver a reset link.
+  -- Not unique/not-null — legacy/imported rows may have none yet.
+  email       text,
   created_at  timestamptz not null default now()
 );
 

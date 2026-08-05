@@ -1,4 +1,4 @@
-# Deploying Hoops 🏀
+# Deploying Picked Up 🏀⚽🏐
 
 This is a **Next.js + Supabase** app that runs free on **Vercel**. Follow these
 steps top to bottom. Total time: ~20 minutes. Nothing here costs money.
@@ -96,7 +96,7 @@ npm run test:balance
 ```bash
 git init
 git add .
-git commit -m "Hoops tournament app"
+git commit -m "Picked Up pickup sports app"
 # create an empty repo on github.com first, then:
 git remote add origin https://github.com/<you>/<repo>.git
 git branch -M main
@@ -111,11 +111,14 @@ git push -u origin main
 
 1. Go to https://vercel.com/new and **import** your GitHub repo.
 2. Framework preset: **Next.js** (auto-detected). Leave build settings default.
-3. Expand **Environment Variables** and add the same five as in `.env.local`:
+3. Expand **Environment Variables** and add the same six as in `.env.local`:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `NEXT_PUBLIC_APP_EMAIL_DOMAIN` (e.g. `hoops.local`)
+   - `NEXT_PUBLIC_SITE_URL` — your real Vercel URL, e.g.
+     `https://your-app.vercel.app` (used to build the link inside
+     password-reset emails)
    - `CRON_SECRET` (any long random string — guards the daily gameday-expiry
      endpoint; Vercel Cron sends it automatically once set)
 4. Click **Deploy**. After ~1 min you get a live URL like
@@ -124,7 +127,9 @@ git push -u origin main
 ### 4a. Point Supabase at your live URL
 In Supabase: **Authentication → URL Configuration**:
 - **Site URL**: your Vercel URL.
-- **Redirect URLs**: add your Vercel URL.
+- **Redirect URLs**: add your Vercel URL **and** `https://your-app.vercel.app/reset-password`
+  — Supabase only allows redirecting to URLs on this list, so password-reset
+  links will fail silently if `/reset-password` isn't added here.
 
 (Not strictly required for password login, but good hygiene.)
 

@@ -2,14 +2,14 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Hoops — Pickup Groups",
+  title: "Picked Up — Pickup Sports Groups",
   description:
     "Run persistent basketball, soccer, and volleyball groups with friends: peer ratings, balanced gameday teams, and archetypes.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Hoops",
+    title: "Picked Up",
   },
 };
 

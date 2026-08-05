@@ -1,6 +1,6 @@
 {
-  "name": "Hoops — Pickup Groups",
-  "short_name": "Hoops",
+  "name": "Picked Up — Pickup Sports Groups",
+  "short_name": "Picked Up",
   "description": "Run persistent basketball, soccer, and volleyball groups with friends: ratings, balanced gameday teams, and archetypes.",
   "start_url": "/home",
   "display": "standalone",

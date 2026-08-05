@@ -4,14 +4,19 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { usernameToEmail, isValidUsername, normalizeUsername } from "@/lib/username";
+import { isValidUsername, normalizeUsername } from "@/lib/username";
 import { Button, Input, Label, Spinner, Avatar } from "@/components/ui";
 import { GENDER_LABELS, type Gender } from "@/lib/constants";
+
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
 
 export default function SignupPage() {
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [gender, setGender] = useState<Gender | null>(null);
   const [heightCm, setHeightCm] = useState("");
@@ -36,6 +41,10 @@ export default function SignupPage() {
       setError("Username must be 3–20 chars: letters, numbers, underscore.");
       return;
     }
+    if (!isValidEmail(email)) {
+      setError("Enter a valid email — it's how you'll reset your password if you forget it.");
+      return;
+    }
     if (password.length < 6) {
       setError("Password must be at least 6 characters.");
       return;
@@ -48,16 +57,19 @@ export default function SignupPage() {
     setLoading(true);
     const supabase = createClient();
     const uname = normalizeUsername(username);
+    const realEmail = email.trim().toLowerCase();
 
-    // 1. Create the auth user (synthetic email from username).
+    // 1. Create the auth user with the REAL email — you still log in with
+    // just your username (see /login's resolver), this email exists so
+    // "forgot password" has somewhere to send a reset link.
     const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-      email: usernameToEmail(uname),
+      email: realEmail,
       password,
     });
     if (signUpError || !signUpData.user) {
       setError(
         signUpError?.message?.includes("already")
-          ? "That username is taken."
+          ? "That email is already registered."
           : signUpError?.message ?? "Could not sign up.",
       );
       setLoading(false);
@@ -68,7 +80,7 @@ export default function SignupPage() {
     // Ensure we have a session (in case auto-confirm left us signed out).
     if (!signUpData.session) {
       await supabase.auth.signInWithPassword({
-        email: usernameToEmail(uname),
+        email: realEmail,
         password,
       });
     }
@@ -92,6 +104,7 @@ export default function SignupPage() {
       id: userId,
       username: uname,
       display_name: displayName.trim() || uname,
+      email: realEmail,
       gender,
       height_cm: heightCm ? Number(heightCm) : null,
       weight_kg: weightKg ? Number(weightKg) : null,
@@ -150,6 +163,21 @@ export default function SignupPage() {
             onChange={(e) => setDisplayName(e.target.value)}
             placeholder="Kobe B."
           />
+        </div>
+        <div>
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            required
+          />
+          <p className="text-xs text-[var(--muted)] mt-1">
+            Only used to send you a password reset link if you ever need one.
+          </p>
         </div>
         <div>
           <Label htmlFor="password">Password</Label>

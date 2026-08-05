@@ -5,6 +5,7 @@ export type Profile = {
   id: string;
   username: string;
   display_name: string;
+  email: string | null;
   gender: Gender | null;
   height_cm: number | null;
   weight_kg: number | null;
