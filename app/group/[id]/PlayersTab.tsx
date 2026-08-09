@@ -6,7 +6,14 @@ import { Avatar, Badge, Button, Card, Input, Label, Spinner } from "@/components
 import { HelpTooltip } from "@/components/HelpTooltip";
 import { DISPLAY_PRESETS, formatHeight, type DisplayOptions } from "@/lib/constants";
 import type { Group, Profile } from "@/lib/types";
-import { removeMember, setMemberRatingWeight, updateGroupSettings } from "@/app/actions/group";
+import type { GroupPlayerMeta } from "@/lib/data";
+import {
+  leaveGroup,
+  removeMember,
+  setMemberManagerStatus,
+  setMemberRatingWeight,
+  updateGroupSettings,
+} from "@/app/actions/group";
 import { useLocale } from "@/lib/i18n/LocaleContext";
 import { pluralKey, type TranslationKey } from "@/lib/i18n";
 
@@ -21,21 +28,39 @@ const DISPLAY_KEYS: { key: keyof DisplayOptions; tKey: TranslationKey }[] = [
 export function PlayersTab({
   group,
   isManager,
+  myUserId,
   roster,
-  ratingWeights,
+  playerMeta,
 }: {
   group: Group;
   isManager: boolean;
+  myUserId: string;
   roster: Profile[];
-  ratingWeights: Record<string, number>;
+  playerMeta: Record<string, GroupPlayerMeta>;
 }) {
   const router = useRouter();
   const { t } = useLocale();
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   async function remove(userId: string, name: string) {
     if (!confirm(t("players.removeConfirm", { name }))) return;
     await removeMember(group.id, userId);
     router.refresh();
+  }
+
+  async function toggleManager(userId: string, makeManager: boolean) {
+    setBusyId(userId);
+    await setMemberManagerStatus(group.id, userId, makeManager);
+    router.refresh();
+    setBusyId(null);
+  }
+
+  const isCreator = myUserId === group.creator_id;
+
+  async function leave() {
+    if (!confirm(t("players.leaveConfirm", { name: group.name }))) return;
+    const res = await leaveGroup(group.id);
+    if (res.ok) router.push("/home");
   }
 
   return (
@@ -44,7 +69,7 @@ export function PlayersTab({
 
       {isManager && <SettingsCard group={group} />}
       {isManager && (
-        <RatingWeightCard group={group} roster={roster} ratingWeights={ratingWeights} />
+        <RatingWeightCard group={group} roster={roster} playerMeta={playerMeta} />
       )}
 
       <div>
@@ -52,36 +77,62 @@ export function PlayersTab({
           {roster.length} {t(pluralKey(roster.length, "players.playersCount"))}
         </h3>
         <div className="space-y-2">
-          {roster.map((p) => (
-            <Card key={p.id} className="flex items-center gap-3 py-3">
-              <Avatar src={p.photo_url} name={p.display_name} size={44} />
-              <div className="flex-1 min-w-0">
-                <div className="font-medium truncate">{p.display_name}</div>
-                <div className="text-xs text-[var(--muted)]">@{p.username}</div>
-              </div>
-              <div className="text-end text-xs text-[var(--muted)]">
-                {p.height_cm ? <div>{formatHeight(p.height_cm)}</div> : null}
-                {!p.photo_url && <Badge className="mt-1">{t("players.noPhoto")}</Badge>}
-              </div>
-              {(ratingWeights[p.id] ?? 1) > 1 && (
-                <Badge className="bg-[var(--primary)]/15 border-[var(--primary)] text-[var(--primary)]">
-                  {t("players.ratingPowerBadge", { n: ratingWeights[p.id] })}
-                </Badge>
-              )}
-              {isManager && p.id !== group.creator_id && (
-                <button
-                  onClick={() => remove(p.id, p.display_name)}
-                  className="text-[var(--muted)] hover:text-red-400 px-1"
-                  title={t("players.removePlayerTitle")}
-                >
-                  ✕
-                </button>
-              )}
-            </Card>
-          ))}
+          {roster.map((p) => {
+            const isPlayerCreator = p.id === group.creator_id;
+            const isPlayerManager = playerMeta[p.id]?.isManager ?? false;
+            const weight = playerMeta[p.id]?.ratingWeight ?? 1;
+            return (
+              <Card key={p.id} className="py-3 space-y-2">
+                <div className="flex items-center gap-3">
+                  <Avatar src={p.photo_url} name={p.display_name} size={44} />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium truncate">{p.display_name}</div>
+                    <div className="text-xs text-[var(--muted)]">@{p.username}</div>
+                  </div>
+                  <div className="text-end text-xs text-[var(--muted)]">
+                    {p.height_cm ? <div>{formatHeight(p.height_cm)}</div> : null}
+                    {!p.photo_url && <Badge className="mt-1">{t("players.noPhoto")}</Badge>}
+                  </div>
+                  {isPlayerCreator && <Badge>{t("players.creatorBadge")}</Badge>}
+                  {!isPlayerCreator && isPlayerManager && <Badge>{t("players.managerBadge")}</Badge>}
+                  {weight > 1 && (
+                    <Badge className="bg-[var(--primary)]/15 border-[var(--primary)] text-[var(--primary)]">
+                      {t("players.ratingPowerBadge", { n: weight })}
+                    </Badge>
+                  )}
+                  {isManager && !isPlayerCreator && (
+                    <button
+                      onClick={() => remove(p.id, p.display_name)}
+                      className="text-[var(--muted)] hover:text-red-400 px-1"
+                      title={t("players.removePlayerTitle")}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+                {isManager && !isPlayerCreator && (
+                  <div className="ps-[56px]">
+                    <button
+                      onClick={() => toggleManager(p.id, !isPlayerManager)}
+                      disabled={busyId === p.id}
+                      className="text-xs text-[var(--primary)] hover:underline disabled:opacity-50"
+                    >
+                      {isPlayerManager ? t("players.removeManager") : t("players.makeManager")}
+                    </button>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
         </div>
         <p className="text-xs text-[var(--muted)] mt-2">{t("players.joinAnytimeHint")}</p>
       </div>
+
+      {!isCreator && (
+        <Button variant="secondary" className="w-full" onClick={leave}>
+          {t("players.leaveGroup")}
+        </Button>
+      )}
     </div>
   );
 }
@@ -89,11 +140,11 @@ export function PlayersTab({
 function RatingWeightCard({
   group,
   roster,
-  ratingWeights,
+  playerMeta,
 }: {
   group: Group;
   roster: Profile[];
-  ratingWeights: Record<string, number>;
+  playerMeta: Record<string, GroupPlayerMeta>;
 }) {
   const router = useRouter();
   const { t } = useLocale();
@@ -117,7 +168,7 @@ function RatingWeightCard({
       </h3>
       <div className="space-y-2">
         {others.map((p) => {
-          const weight = ratingWeights[p.id] ?? 1;
+          const weight = playerMeta[p.id]?.ratingWeight ?? 1;
           return (
             <div key={p.id} className="flex items-center gap-3">
               <Avatar src={p.photo_url} name={p.display_name} size={32} />

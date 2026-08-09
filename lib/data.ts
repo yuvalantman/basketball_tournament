@@ -40,17 +40,23 @@ export async function getRoster(groupId: string): Promise<Profile[]> {
     .sort((a, b) => a.display_name.localeCompare(b.display_name));
 }
 
-// Manager-granted rating weight per member — visible to the whole group
+export type GroupPlayerMeta = { ratingWeight: number; isManager: boolean };
+
+// Per-member rating weight + co-manager status — visible to the whole group
 // (gp_select already permits reading any member's full group_players row),
-// so a "2x rating power" badge can be shown to everyone, not just the owner.
-export async function getGroupPlayerWeights(groupId: string): Promise<Record<string, number>> {
+// so badges/permissions can be computed for everyone, not just the caller.
+export async function getGroupPlayerMeta(groupId: string): Promise<Record<string, GroupPlayerMeta>> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("group_players")
-    .select("user_id, rating_weight")
+    .select("user_id, rating_weight, is_manager")
     .eq("group_id", groupId);
-  const out: Record<string, number> = {};
-  for (const row of data ?? []) out[row.user_id as string] = row.rating_weight as number;
+  const out: Record<string, GroupPlayerMeta> = {};
+  for (const row of data ?? [])
+    out[row.user_id as string] = {
+      ratingWeight: row.rating_weight as number,
+      isManager: row.is_manager as boolean,
+    };
   return out;
 }
 

@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { SPORTS, overallParam, type SportId } from "@/lib/sports";
 import type { ManagerInspection } from "@/lib/types";
-import { type ActionResult, requireGroupMember, requireGroupOwner, requireUser } from "./_shared";
+import { type ActionResult, requireGroupManager, requireGroupMember, requireUser } from "./_shared";
 
 function cleanValues(sport: SportId, values: Record<string, number>): Record<string, number> {
   const allowed = new Set(SPORTS[sport].params.map((p) => p.key));
@@ -105,11 +105,12 @@ export async function getMyRatingFor(groupId: string, rateeId: string): Promise<
   }
 }
 
-// Manager-only: submit/edit a rating with an extra weight multiplier. This is
-// the ONLY entry point that can ever produce weight>1/source='manager' — it
-// re-verifies the caller is the group's owner server-side (never trusts a
-// client-passed flag), then writes via the admin client (bypassing the
-// normal-rating RLS policy, which would reject weight>1 anyway).
+// Manager-only (creator or co-manager): submit/edit a rating with an extra
+// weight multiplier. This is the ONLY entry point that can ever produce
+// weight>1/source='manager' — it re-verifies the caller is a group manager
+// server-side (never trusts a client-passed flag), then writes via the admin
+// client (bypassing the normal-rating RLS policy, which would reject
+// weight>1 anyway).
 export async function submitManagerRating(
   groupId: string,
   rateeId: string,
@@ -117,8 +118,8 @@ export async function submitManagerRating(
   weightMultiplier: 1 | 2 | 3 | 5,
 ): Promise<ActionResult> {
   try {
-    const ownerId = await requireGroupOwner(groupId);
-    if (ownerId === rateeId) return { ok: false, error: "You can't rate yourself." };
+    const managerId = await requireGroupManager(groupId);
+    if (managerId === rateeId) return { ok: false, error: "You can't rate yourself." };
     const admin = createAdminClient();
 
     const { data: group } = await admin.from("groups").select("sport").eq("id", groupId).single();
@@ -134,7 +135,7 @@ export async function submitManagerRating(
     const { error } = await admin.from("ratings").upsert(
       {
         group_id: groupId,
-        rater_id: ownerId,
+        rater_id: managerId,
         ratee_id: rateeId,
         values: clean,
         weight: weightMultiplier,
@@ -152,12 +153,15 @@ export async function submitManagerRating(
   }
 }
 
-// Manager-only: per-attribute rated-by counts for one player. Counts only —
-// never exposes who rated what (mirrors v1's getRatingProgress, which also
-// only ever reads rater/ratee pairs, never scores, for this exact reason).
+// Manager-only (creator or co-manager): per-attribute rated-by counts for one
+// player. Counts only — never exposes who rated what (mirrors v1's
+// getRatingProgress, which also only ever reads rater/ratee pairs, never
+// scores, for this exact reason). "myRating" is THIS manager's own prior
+// manager-rating of the player, if any — each manager sees their own, not a
+// shared one.
 export async function getManagerInspection(groupId: string, rateeId: string): Promise<ActionResult> {
   try {
-    const ownerId = await requireGroupOwner(groupId);
+    const managerId = await requireGroupManager(groupId);
     const admin = createAdminClient();
 
     const { data: group } = await admin.from("groups").select("sport").eq("id", groupId).single();
@@ -179,7 +183,7 @@ export async function getManagerInspection(groupId: string, rateeId: string): Pr
       (r) => Object.keys((r.values as Record<string, number>) ?? {}).length > 0,
     ).length;
 
-    const myRow = (rows ?? []).find((r) => r.rater_id === ownerId);
+    const myRow = (rows ?? []).find((r) => r.rater_id === managerId);
 
     const result: ManagerInspection = {
       user_id: rateeId,

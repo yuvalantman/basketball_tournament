@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui";
 import { SPORT_LABELS, SPORT_LABELS_HE } from "@/lib/sports";
 import type { Group, PlayerCard, Profile } from "@/lib/types";
-import type { GamedayWithStatus } from "@/lib/data";
+import type { GamedayWithStatus, GroupPlayerMeta } from "@/lib/data";
 import { useLocale } from "@/lib/i18n/LocaleContext";
 import { PlayersTab } from "./PlayersTab";
 import { RateTab } from "./RateTab";
@@ -21,9 +21,9 @@ export function GroupView(props: {
   ratedIds: string[];
   playerCards: PlayerCard[];
   gamedays: GamedayWithStatus[];
-  ratingWeights: Record<string, number>;
+  playerMeta: Record<string, GroupPlayerMeta>;
 }) {
-  const { group, isManager, myUserId, roster, ratedIds, playerCards, gamedays, ratingWeights } = props;
+  const { group, isManager, myUserId, roster, ratedIds, playerCards, gamedays, playerMeta } = props;
   const { t, locale } = useLocale();
   const sportLabels = locale === "he" ? SPORT_LABELS_HE : SPORT_LABELS;
   const [tab, setTab] = useState<Tab>("players");
@@ -64,8 +64,9 @@ export function GroupView(props: {
         <PlayersTab
           group={group}
           isManager={isManager}
+          myUserId={myUserId}
           roster={roster}
-          ratingWeights={ratingWeights}
+          playerMeta={playerMeta}
         />
       )}
       {tab === "rate" && (

@@ -109,6 +109,12 @@ export const en = {
     displayRadar: "Radar chart",
     displayBestWorst: "Best / worst skill",
     displayArchetype: "Archetype",
+    creatorBadge: "Creator",
+    managerBadge: "Manager",
+    makeManager: "Make manager",
+    removeManager: "Remove manager",
+    leaveGroup: "Leave group",
+    leaveConfirm: "Leave {name}? You'll need the invite code to rejoin.",
   },
   rate: {
     yourRatings: "Your ratings",

@@ -18,6 +18,10 @@ export async function requireUser(): Promise<string> {
   return uid;
 }
 
+// The group's original creator — the one, immutable "owner." Reserved for
+// the rare truly-irreversible action (deleting the whole group). Everything
+// else routine should use requireGroupManager below, which also accepts
+// promoted co-managers.
 export async function requireGroupOwner(groupId: string): Promise<string> {
   const uid = await requireUser();
   const admin = createAdminClient();
@@ -27,7 +31,30 @@ export async function requireGroupOwner(groupId: string): Promise<string> {
     .eq("id", groupId)
     .single();
   if (!data || data.creator_id !== uid)
-    throw new Error("Only the group manager can do that");
+    throw new Error("Only the group creator can do that");
+  return uid;
+}
+
+// The creator OR any member promoted to co-manager (group_players.is_manager).
+// Use this for day-to-day group administration — settings, roster, rating
+// weight grants, manager-inspection ratings, gameday admin.
+export async function requireGroupManager(groupId: string): Promise<string> {
+  const uid = await requireUser();
+  const admin = createAdminClient();
+  const { data: group } = await admin
+    .from("groups")
+    .select("creator_id")
+    .eq("id", groupId)
+    .single();
+  if (!group) throw new Error("Group not found");
+  if (group.creator_id === uid) return uid;
+  const { data: gp } = await admin
+    .from("group_players")
+    .select("is_manager")
+    .eq("group_id", groupId)
+    .eq("user_id", uid)
+    .maybeSingle();
+  if (!gp?.is_manager) throw new Error("Only a group manager can do that");
   return uid;
 }
 
@@ -44,8 +71,9 @@ export async function requireGroupMember(groupId: string): Promise<string> {
   return uid;
 }
 
-// A gameday's creator OR the group's owner — the two roles allowed to manage
-// a gameday (delete it, edit restrictions/teams/waitlist/participants).
+// A gameday's creator OR any group manager (creator or co-manager) — the
+// roles allowed to manage a gameday (delete it, edit restrictions/teams/
+// waitlist/participants).
 export async function requireGamedayManager(gamedayId: string): Promise<{
   uid: string;
   groupId: string;
@@ -59,8 +87,17 @@ export async function requireGamedayManager(gamedayId: string): Promise<{
     .single();
   if (!gameday) throw new Error("Gameday not found");
   const group = gameday.groups as unknown as { creator_id: string } | null;
-  if (gameday.creator_id !== uid && group?.creator_id !== uid)
-    throw new Error("Only this gameday's creator or the group manager can do that");
+  if (gameday.creator_id === uid || group?.creator_id === uid) {
+    return { uid, groupId: gameday.group_id };
+  }
+  const { data: gp } = await admin
+    .from("group_players")
+    .select("is_manager")
+    .eq("group_id", gameday.group_id)
+    .eq("user_id", uid)
+    .maybeSingle();
+  if (!gp?.is_manager)
+    throw new Error("Only this gameday's creator or a group manager can do that");
   return { uid, groupId: gameday.group_id };
 }
 

@@ -8,6 +8,8 @@ import type { SportId } from "@/lib/sports";
 import {
   type ActionResult,
   randomCode,
+  requireGroupManager,
+  requireGroupMember,
   requireGroupOwner,
   requireUser,
 } from "./_shared";
@@ -76,14 +78,14 @@ export async function joinGroup(codeInput: string): Promise<ActionResult> {
   }
 }
 
-// Owner-only. `sport` is deliberately never accepted here — it's immutable
-// after creation.
+// Manager-only (creator or co-manager). `sport` is deliberately never
+// accepted here — it's immutable after creation.
 export async function updateGroupSettings(
   groupId: string,
   patch: { name?: string; display_options?: DisplayOptions },
 ): Promise<ActionResult> {
   try {
-    await requireGroupOwner(groupId);
+    await requireGroupManager(groupId);
     const supabase = await createClient();
     const clean: Record<string, unknown> = {};
     if (patch.name !== undefined) clean.name = patch.name.trim() || "Group";
@@ -97,43 +99,57 @@ export async function updateGroupSettings(
   }
 }
 
-// Owner removes a member. Cleans up everything tied to that player in this
-// group so ratings/rosters/gamedays stay consistent.
-export async function removeMember(groupId: string, userId: string): Promise<ActionResult> {
-  try {
-    const ownerId = await requireGroupOwner(groupId);
-    if (userId === ownerId) return { ok: false, error: "The manager can't be removed." };
-    const admin = createAdminClient();
+// Shared cleanup for "this user is leaving this group's roster", whether
+// initiated by a manager (removeMember) or by the member themselves
+// (leaveGroup) — removes their ratings, gameday participation/waitlist/team
+// slots in this group, then the group_players row itself.
+async function detachPlayerFromGroup(
+  admin: ReturnType<typeof createAdminClient>,
+  groupId: string,
+  userId: string,
+): Promise<void> {
+  await admin
+    .from("ratings")
+    .delete()
+    .eq("group_id", groupId)
+    .or(`rater_id.eq.${userId},ratee_id.eq.${userId}`);
 
+  // Gamedays in this group the user participates/waitlists/plays in.
+  const { data: gamedays } = await admin.from("gamedays").select("id").eq("group_id", groupId);
+  const gamedayIds = (gamedays ?? []).map((g) => g.id);
+  if (gamedayIds.length) {
     await admin
-      .from("ratings")
+      .from("gameday_participants")
       .delete()
-      .eq("group_id", groupId)
-      .or(`rater_id.eq.${userId},ratee_id.eq.${userId}`);
-
-    // Gamedays in this group the user participates/waitlists/plays in.
-    const { data: gamedays } = await admin.from("gamedays").select("id").eq("group_id", groupId);
-    const gamedayIds = (gamedays ?? []).map((g) => g.id);
-    if (gamedayIds.length) {
+      .in("gameday_id", gamedayIds)
+      .eq("kind", "member")
+      .eq("participant_id", userId);
+    await admin.from("gameday_waitlist").delete().in("gameday_id", gamedayIds).eq("user_id", userId);
+    const { data: teams } = await admin.from("teams").select("id").in("gameday_id", gamedayIds);
+    const teamIds = (teams ?? []).map((t) => t.id);
+    if (teamIds.length)
       await admin
-        .from("gameday_participants")
+        .from("team_members")
         .delete()
-        .in("gameday_id", gamedayIds)
+        .in("team_id", teamIds)
         .eq("kind", "member")
         .eq("participant_id", userId);
-      await admin.from("gameday_waitlist").delete().in("gameday_id", gamedayIds).eq("user_id", userId);
-      const { data: teams } = await admin.from("teams").select("id").in("gameday_id", gamedayIds);
-      const teamIds = (teams ?? []).map((t) => t.id);
-      if (teamIds.length)
-        await admin
-          .from("team_members")
-          .delete()
-          .in("team_id", teamIds)
-          .eq("kind", "member")
-          .eq("participant_id", userId);
-    }
+  }
 
-    await admin.from("group_players").delete().eq("group_id", groupId).eq("user_id", userId);
+  await admin.from("group_players").delete().eq("group_id", groupId).eq("user_id", userId);
+}
+
+// Manager-only (creator or co-manager) removes a member. The creator can
+// never be removed, even by another co-manager.
+export async function removeMember(groupId: string, userId: string): Promise<ActionResult> {
+  try {
+    await requireGroupManager(groupId);
+    const admin = createAdminClient();
+    const { data: group } = await admin.from("groups").select("creator_id").eq("id", groupId).single();
+    if (!group) throw new Error("Group not found");
+    if (userId === group.creator_id) return { ok: false, error: "The group creator can't be removed." };
+
+    await detachPlayerFromGroup(admin, groupId, userId);
 
     revalidatePath(`/group/${groupId}`);
     return { ok: true };
@@ -142,20 +158,72 @@ export async function removeMember(groupId: string, userId: string): Promise<Act
   }
 }
 
-// Owner grants (or revokes) a member's rating power — their own ratings of
-// others will count `weight`x instead of the default 1x. Only self-service
-// ("normal") ratings are affected; see app/actions/rating.ts's upsertRating.
+// Self-service: any member can leave a group they're in — except the
+// creator, who'd orphan it (delete the group instead if you want to close it
+// entirely).
+export async function leaveGroup(groupId: string): Promise<ActionResult> {
+  try {
+    const uid = await requireGroupMember(groupId);
+    const admin = createAdminClient();
+    const { data: group } = await admin.from("groups").select("creator_id").eq("id", groupId).single();
+    if (!group) throw new Error("Group not found");
+    if (uid === group.creator_id)
+      return { ok: false, error: "The group creator can't leave. Delete the group instead if you want to close it." };
+
+    await detachPlayerFromGroup(admin, groupId, uid);
+
+    revalidatePath("/home");
+    revalidatePath(`/group/${groupId}`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+// Manager-only grants (or revokes) a member's rating power — their own
+// ratings of others will count `weight`x instead of the default 1x. Only
+// self-service ("normal") ratings are affected; see rating.ts's upsertRating.
 export async function setMemberRatingWeight(
   groupId: string,
   userId: string,
   weight: 1 | 2 | 3,
 ): Promise<ActionResult> {
   try {
-    await requireGroupOwner(groupId);
+    await requireGroupManager(groupId);
     const admin = createAdminClient();
     const { error } = await admin
       .from("group_players")
       .update({ rating_weight: weight })
+      .eq("group_id", groupId)
+      .eq("user_id", userId);
+    if (error) throw new Error(error.message);
+    revalidatePath(`/group/${groupId}`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+// Manager-only promotes/demotes a co-manager. Any current manager (creator
+// or co-manager) can grant or revoke another member's manager status — the
+// creator's own status is fixed (always a manager, via creator_id) and can
+// never be changed here.
+export async function setMemberManagerStatus(
+  groupId: string,
+  userId: string,
+  isManager: boolean,
+): Promise<ActionResult> {
+  try {
+    await requireGroupManager(groupId);
+    const admin = createAdminClient();
+    const { data: group } = await admin.from("groups").select("creator_id").eq("id", groupId).single();
+    if (!group) throw new Error("Group not found");
+    if (userId === group.creator_id)
+      return { ok: false, error: "The group creator is always a manager." };
+
+    const { error } = await admin
+      .from("group_players")
+      .update({ is_manager: isManager })
       .eq("group_id", groupId)
       .eq("user_id", userId);
     if (error) throw new Error(error.message);
@@ -198,9 +266,12 @@ export async function getMyGroups(): Promise<ActionResult> {
 
     const { data: memberships } = await admin
       .from("group_players")
-      .select("group_id, groups(id, name, sport, code, creator_id)")
+      .select("group_id, is_manager, groups(id, name, sport, code, creator_id)")
       .eq("user_id", uid);
 
+    const isManagerByGroupId = new Map(
+      (memberships ?? []).map((m) => [m.group_id, m.is_manager as boolean]),
+    );
     const groups = (memberships ?? [])
       .map((m) => m.groups as unknown as { id: string; name: string; sport: SportId; code: string; creator_id: string } | null)
       .filter((g): g is NonNullable<typeof g> => g != null);
@@ -223,7 +294,7 @@ export async function getMyGroups(): Promise<ActionResult> {
       sport: g.sport,
       code: g.code,
       memberCount: counts.get(g.id) ?? 0,
-      isManager: g.creator_id === uid,
+      isManager: g.creator_id === uid || (isManagerByGroupId.get(g.id) ?? false),
     }));
 
     return { ok: true, data: { groups: summaries, defaults: DEFAULT_DISPLAY_OPTIONS } };

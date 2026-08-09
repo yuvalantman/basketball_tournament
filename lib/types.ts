@@ -34,6 +34,7 @@ export type GroupPlayer = {
   user_id: string;
   joined_at: string;
   rating_weight: number;
+  is_manager: boolean;
   profile?: Profile;
 };
 

@@ -114,6 +114,12 @@ export const he: typeof en = {
     displayRadar: "גרף רדאר",
     displayBestWorst: "החוזק / החולשה הבולטים",
     displayArchetype: "ארכיטייפ",
+    creatorBadge: "יוצר/ת",
+    managerBadge: "מנהל/ת",
+    makeManager: "הפיכה למנהל/ת",
+    removeManager: "הסרת ניהול",
+    leaveGroup: "עזיבת הקהילה",
+    leaveConfirm: "לעזוב את {name}? תצטרכו את קוד ההזמנה כדי להצטרף שוב.",
   },
   rate: {
     yourRatings: "הדירוגים שלך",

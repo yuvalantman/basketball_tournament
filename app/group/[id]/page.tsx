@@ -3,7 +3,7 @@ import Link from "next/link";
 import {
   getGamedaysForGroup,
   getGroup,
-  getGroupPlayerWeights,
+  getGroupPlayerMeta,
   getMyProfile,
   getMyRatedSet,
   getRoster,
@@ -22,15 +22,15 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
   const group = await getGroup(id);
   if (!group) notFound();
 
-  const isManager = group.creator_id === profile.id;
-
-  const [roster, ratedSet, playerCards, gamedays, ratingWeights] = await Promise.all([
+  const [roster, ratedSet, playerCards, gamedays, playerMeta] = await Promise.all([
     getRoster(id),
     getMyRatedSet(id),
     getPlayerCards(id),
     getGamedaysForGroup(id),
-    getGroupPlayerWeights(id),
+    getGroupPlayerMeta(id),
   ]);
+
+  const isManager = group.creator_id === profile.id || (playerMeta[profile.id]?.isManager ?? false);
 
   return (
     <main className="max-w-md mx-auto w-full px-4 pb-28 pt-5">
@@ -52,7 +52,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
         ratedIds={[...ratedSet]}
         playerCards={playerCards ?? []}
         gamedays={gamedays}
-        ratingWeights={ratingWeights}
+        playerMeta={playerMeta}
       />
     </main>
   );

@@ -61,6 +61,11 @@ create table if not exists public.group_players (
   -- default 1x. Distinct from ratings.weight/source below, which power a
   -- separate feature (the manager's own one-off weighted rating of someone).
   rating_weight smallint not null default 1 check (rating_weight in (1,2,3)),
+  -- Co-manager flag: grants the same authorities as the group's creator
+  -- (settings, roster, rating weight, gameday admin) except deleting the
+  -- group. The creator doesn't need this set — creator_id is always,
+  -- independently, a manager. See app/actions/_shared.ts's requireGroupManager.
+  is_manager    boolean not null default false,
   primary key (group_id, user_id)
 );
 

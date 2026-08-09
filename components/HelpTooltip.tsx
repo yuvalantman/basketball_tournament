@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card } from "@/components/ui";
 
 // Small "?" affordance for short contextual explanations. Not shown by
@@ -10,6 +10,18 @@ import { Card } from "@/components/ui";
 // t("...").
 export function HelpTooltip({ text, className }: { text: string; className?: string }) {
   const [open, setOpen] = useState(false);
+
+  // Lock background scroll while the modal is open — without this, a touch
+  // that misses the (small) close button on mobile gets read as a scroll on
+  // the page behind instead of a tap on the modal, so it feels stuck open.
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
 
   return (
     <>
@@ -34,11 +46,11 @@ export function HelpTooltip({ text, className }: { text: string; className?: str
               type="button"
               onClick={() => setOpen(false)}
               aria-label="Close"
-              className="absolute top-3 end-3 text-[var(--muted)] hover:text-[var(--foreground)] text-lg leading-none"
+              className="absolute -top-2 -end-2 h-9 w-9 flex items-center justify-center rounded-full bg-[var(--surface)] border border-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)] text-base leading-none"
             >
               ✕
             </button>
-            <p className="text-sm pe-6">{text}</p>
+            <p className="text-sm pe-4">{text}</p>
           </Card>
         </div>
       )}
