@@ -191,6 +191,17 @@ export async function leaveGroup(groupId: string): Promise<ActionResult> {
 // Manager-only grants (or revokes) a member's rating power — their own
 // ratings of others will count `weight`x instead of the default 1x. Only
 // self-service ("normal") ratings are affected; see rating.ts's upsertRating.
+//
+// Retroactive: a rating's weight is normally stamped onto the row at the
+// moment it's saved (upsertRating looks up the rater's CURRENT granted
+// weight each time), so without this, changing someone's weight here would
+// only affect ratings they create or edit afterward — everything they
+// already submitted would stay frozen at their old weight until touched
+// again. To avoid that surprise, this also rewrites every rating row this
+// member has already given in this group, so averages reflect the new
+// weight immediately. Scoped to source='normal' only — a manager's own
+// one-off "inspection" ratings (source='manager') carry their own
+// independently chosen weight and must never be touched by this.
 export async function setMemberRatingWeight(
   groupId: string,
   userId: string,
@@ -205,6 +216,15 @@ export async function setMemberRatingWeight(
       .eq("group_id", groupId)
       .eq("user_id", userId);
     if (error) throw new Error(error.message);
+
+    const { error: ratingsError } = await admin
+      .from("ratings")
+      .update({ weight })
+      .eq("group_id", groupId)
+      .eq("rater_id", userId)
+      .eq("source", "normal");
+    if (ratingsError) throw new Error(ratingsError.message);
+
     revalidatePath(`/group/${groupId}`);
     return { ok: true };
   } catch (e) {
