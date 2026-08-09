@@ -131,4 +131,9 @@ export type ManagerInspection = {
   overallRaterCount: number;
   perParam: { key: string; label: string; raterCount: number }[];
   myRating: Record<string, number> | null; // the manager's own rating of this player, if any
+  // Full current averages/overall (70-100 scale), computed regardless of the
+  // group's display_options — manager-only, never exposed to regular
+  // members. Still never reveals who rated what/how, only the aggregate.
+  averages: Record<string, number>;
+  overall: number | null;
 };

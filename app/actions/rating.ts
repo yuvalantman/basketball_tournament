@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { SPORTS, overallParam, type SportId } from "@/lib/sports";
+import { aggregateRatings, type RatingRow } from "@/lib/stats";
+import { scoreToDisplay } from "@/lib/constants";
 import type { ManagerInspection } from "@/lib/types";
 import { type ActionResult, requireGroupManager, requireGroupMember, requireUser } from "./_shared";
 
@@ -154,11 +156,12 @@ export async function submitManagerRating(
 }
 
 // Manager-only (creator or co-manager): per-attribute rated-by counts for one
-// player. Counts only — never exposes who rated what (mirrors v1's
-// getRatingProgress, which also only ever reads rater/ratee pairs, never
-// scores, for this exact reason). "myRating" is THIS manager's own prior
-// manager-rating of the player, if any — each manager sees their own, not a
-// shared one.
+// player, PLUS the player's full current averages/overall — computed
+// regardless of the group's display_options, since those only gate what
+// regular members see. Still never exposes who rated what/how, only
+// aggregate counts and the weighted average (same math the regular player
+// cards use). "myRating" is THIS manager's own prior manager-rating of the
+// player, if any — each manager sees their own, not a shared one.
 export async function getManagerInspection(groupId: string, rateeId: string): Promise<ActionResult> {
   try {
     const managerId = await requireGroupManager(groupId);
@@ -167,14 +170,15 @@ export async function getManagerInspection(groupId: string, rateeId: string): Pr
     const { data: group } = await admin.from("groups").select("sport").eq("id", groupId).single();
     if (!group) return { ok: false, error: "Group not found." };
     const sport = group.sport as SportId;
+    const sportConfig = SPORTS[sport];
 
     const { data: rows } = await admin
       .from("ratings")
-      .select("rater_id, values")
+      .select("rater_id, values, weight")
       .eq("group_id", groupId)
       .eq("ratee_id", rateeId);
 
-    const perParam = SPORTS[sport].params.map((p) => ({
+    const perParam = sportConfig.params.map((p) => ({
       key: p.key,
       label: p.label,
       raterCount: (rows ?? []).filter((r) => (r.values as Record<string, number>)?.[p.key] != null).length,
@@ -185,11 +189,32 @@ export async function getManagerInspection(groupId: string, rateeId: string): Pr
 
     const myRow = (rows ?? []).find((r) => r.rater_id === managerId);
 
+    const ratingRows: RatingRow[] = (rows ?? []).map((r) => ({
+      rater_id: r.rater_id,
+      ratee_id: rateeId,
+      values: r.values as Record<string, number>,
+      weight: r.weight as number,
+    }));
+    const agg = aggregateRatings(ratingRows, sportConfig).get(rateeId);
+
+    const averages: Record<string, number> = {};
+    if (agg) {
+      for (const param of sportConfig.params) {
+        const entry = agg.perParam[param.key];
+        if (!entry) continue;
+        const own01 = (entry.weightedMean - param.scaleMin) / (param.scaleMax - param.scaleMin);
+        averages[param.key] = scoreToDisplay(own01);
+      }
+    }
+    const overall = agg?.score01 != null ? scoreToDisplay(agg.score01) : null;
+
     const result: ManagerInspection = {
       user_id: rateeId,
       overallRaterCount,
       perParam,
       myRating: (myRow?.values as Record<string, number>) ?? null,
+      averages,
+      overall,
     };
     return { ok: true, data: result };
   } catch (e) {

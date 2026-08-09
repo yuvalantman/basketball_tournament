@@ -143,6 +143,8 @@ export const he: typeof en = {
     needsWork: "דורש שיפור:",
     inspectRatings: "🔍 בדיקת דירוגים",
     hideInspection: "הסתרת בדיקה",
+    fullAverages: "ממוצעים נוכחיים (למנהלים בלבד)",
+    fullAveragesHint: "תמיד מעודכן, ללא קשר למה שמוצג לחברי הקהילה — לעולם לא חושף מי דירג מה.",
     ratedByPerAttribute: "דורג על ידי (לפי מאפיין)",
     rateAsManager: "דירוג כמנהל/ת (משקל נוסף אופציונלי)",
     weight: "משקל",

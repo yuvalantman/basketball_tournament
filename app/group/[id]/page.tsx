@@ -32,6 +32,16 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
 
   const isManager = group.creator_id === profile.id || (playerMeta[profile.id]?.isManager ?? false);
 
+  // Rating-weight grants are manager-only information — strip the real
+  // values before this ever reaches a non-manager's client bundle, rather
+  // than just hiding it in the UI (which a regular user could bypass by
+  // reading the page's own React props/HTML).
+  const visiblePlayerMeta = isManager
+    ? playerMeta
+    : Object.fromEntries(
+        Object.entries(playerMeta).map(([uid, meta]) => [uid, { ...meta, ratingWeight: 1 }]),
+      );
+
   return (
     <main className="max-w-md mx-auto w-full px-4 pb-28 pt-5">
       <header className="flex items-center justify-between mb-4">
@@ -52,7 +62,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
         ratedIds={[...ratedSet]}
         playerCards={playerCards ?? []}
         gamedays={gamedays}
-        playerMeta={playerMeta}
+        playerMeta={visiblePlayerMeta}
       />
     </main>
   );

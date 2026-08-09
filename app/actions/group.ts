@@ -80,17 +80,25 @@ export async function joinGroup(codeInput: string): Promise<ActionResult> {
 
 // Manager-only (creator or co-manager). `sport` is deliberately never
 // accepted here — it's immutable after creation.
+//
+// Uses the admin client for the write, not the RLS-bound one: the groups
+// table's own RLS update policy only allows creator_id = auth.uid(), since
+// it predates co-managers. Authorization is already fully handled above by
+// requireGroupManager, so bypassing RLS here is intentional and safe — using
+// the RLS-bound client instead silently no-ops (0 rows matched) for any
+// co-manager, which is exactly the bug this comment is here to prevent
+// reintroducing.
 export async function updateGroupSettings(
   groupId: string,
   patch: { name?: string; display_options?: DisplayOptions },
 ): Promise<ActionResult> {
   try {
     await requireGroupManager(groupId);
-    const supabase = await createClient();
+    const admin = createAdminClient();
     const clean: Record<string, unknown> = {};
     if (patch.name !== undefined) clean.name = patch.name.trim() || "Group";
     if (patch.display_options !== undefined) clean.display_options = patch.display_options;
-    const { error } = await supabase.from("groups").update(clean).eq("id", groupId);
+    const { error } = await admin.from("groups").update(clean).eq("id", groupId);
     if (error) throw new Error(error.message);
     revalidatePath(`/group/${groupId}`);
     return { ok: true };

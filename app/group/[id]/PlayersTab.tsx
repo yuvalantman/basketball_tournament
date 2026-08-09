@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Avatar, Badge, Button, Card, Input, Label, Spinner } from "@/components/ui";
+import { Badge, Button, Card, Input, Label, Spinner } from "@/components/ui";
 import { HelpTooltip } from "@/components/HelpTooltip";
+import { ZoomableAvatar } from "@/components/ZoomableAvatar";
 import { DISPLAY_PRESETS, formatHeight, type DisplayOptions } from "@/lib/constants";
 import type { Group, Profile } from "@/lib/types";
 import type { GroupPlayerMeta } from "@/lib/data";
@@ -84,7 +85,7 @@ export function PlayersTab({
             return (
               <Card key={p.id} className="py-3 space-y-2">
                 <div className="flex items-center gap-3">
-                  <Avatar src={p.photo_url} name={p.display_name} size={44} />
+                  <ZoomableAvatar src={p.photo_url} name={p.display_name} size={44} />
                   <div className="flex-1 min-w-0">
                     <div className="font-medium truncate">{p.display_name}</div>
                     <div className="text-xs text-[var(--muted)]">@{p.username}</div>
@@ -95,7 +96,7 @@ export function PlayersTab({
                   </div>
                   {isPlayerCreator && <Badge>{t("players.creatorBadge")}</Badge>}
                   {!isPlayerCreator && isPlayerManager && <Badge>{t("players.managerBadge")}</Badge>}
-                  {weight > 1 && (
+                  {isManager && weight > 1 && (
                     <Badge className="bg-[var(--primary)]/15 border-[var(--primary)] text-[var(--primary)]">
                       {t("players.ratingPowerBadge", { n: weight })}
                     </Badge>
@@ -171,7 +172,7 @@ function RatingWeightCard({
           const weight = playerMeta[p.id]?.ratingWeight ?? 1;
           return (
             <div key={p.id} className="flex items-center gap-3">
-              <Avatar src={p.photo_url} name={p.display_name} size={32} />
+              <ZoomableAvatar src={p.photo_url} name={p.display_name} size={32} />
               <span className="flex-1 truncate text-sm">{p.display_name}</span>
               <div className="flex gap-1">
                 {([1, 2, 3] as const).map((w) => (

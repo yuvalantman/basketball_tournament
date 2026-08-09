@@ -137,6 +137,8 @@ export const en = {
     needsWork: "Needs work:",
     inspectRatings: "🔍 Inspect ratings",
     hideInspection: "Hide inspection",
+    fullAverages: "Current averages (managers only)",
+    fullAveragesHint: "Always up to date, regardless of what's shown to members — never reveals who rated what.",
     ratedByPerAttribute: "Rated by (per attribute)",
     rateAsManager: "Rate as manager (optional extra weight)",
     weight: "Weight",

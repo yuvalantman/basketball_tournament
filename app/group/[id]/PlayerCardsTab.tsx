@@ -216,6 +216,34 @@ function InspectPanel({
   return (
     <div className="border-t border-[var(--border)] pt-3 space-y-3">
       <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wide">
+            {t("cards.fullAverages")}
+          </div>
+          {data.overall != null && (
+            <span className="text-lg font-extrabold">
+              {data.overall} <span className="text-[10px] text-[var(--muted)] uppercase font-semibold">{t("cards.ovr")}</span>
+            </span>
+          )}
+        </div>
+        {Object.keys(data.averages).length > 0 ? (
+          <div className="grid grid-cols-2 gap-1.5 text-sm">
+            {sport.params.map((p) =>
+              data.averages[p.key] != null ? (
+                <div key={p.key} className="flex items-center justify-between rounded-lg bg-[var(--surface-2)] px-2.5 py-1.5">
+                  <span className="text-[var(--muted)]">{paramLabel(p, locale)}</span>
+                  <span className="font-semibold">{data.averages[p.key]}</span>
+                </div>
+              ) : null,
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-[var(--muted)]">{t("cards.noRatingsYet")}</p>
+        )}
+        <p className="text-[11px] text-[var(--muted)] mt-1.5">{t("cards.fullAveragesHint")}</p>
+      </div>
+
+      <div>
         <div className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wide mb-1.5">
           {t("cards.ratedByPerAttribute")}
         </div>
