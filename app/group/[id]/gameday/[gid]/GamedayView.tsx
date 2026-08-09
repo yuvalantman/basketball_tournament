@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Avatar, Badge, Button, Card, Input, Spinner } from "@/components/ui";
+import { HelpTooltip } from "@/components/HelpTooltip";
 import { TeamNameEditor } from "@/components/TeamNameEditor";
 import { formatHeight } from "@/lib/constants";
-import { SPORTS, overallParam, type SportId } from "@/lib/sports";
+import { SPORTS, overallParam, paramLabel, type SportId } from "@/lib/sports";
 import type { Group, Participant, Profile, Team } from "@/lib/types";
 import type { GamedayDetail } from "@/lib/data";
+import { useLocale } from "@/lib/i18n/LocaleContext";
 import {
   addGuest,
   addParticipant,
@@ -53,6 +55,7 @@ export function GamedayView({
   isManager: boolean;
 }) {
   const router = useRouter();
+  const { t, locale } = useLocale();
   const { gameday, participants, waitlist, teams, restrictions } = detail;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,12 +67,12 @@ export function GamedayView({
     setBusy(true);
     setError(null);
     const res = await fn();
-    if (!res.ok) setError(res.error ?? "Something went wrong");
+    if (!res.ok) setError(res.error ?? t("common.somethingWentWrong"));
     else router.refresh();
     setBusy(false);
   }
 
-  const assignedRefs = new Set(teams.flatMap((t) => (t.members ?? []).map((m) => `${m.kind}:${m.id}`)));
+  const assignedRefs = new Set(teams.flatMap((tm) => (tm.members ?? []).map((m) => `${m.kind}:${m.id}`)));
   const unassigned = participants.filter((p) => !assignedRefs.has(`${p.kind}:${p.id}`));
   const memberParticipantIds = new Set(participants.filter((p) => p.kind === "member").map((p) => p.id));
   const availableToAdd = roster.filter((p) => !memberParticipantIds.has(p.id));
@@ -83,13 +86,13 @@ export function GamedayView({
       <Card className="flex items-center justify-between">
         <div>
           <div className="text-sm text-[var(--muted)]">
-            {new Date(gameday.date + "T00:00:00").toLocaleDateString(undefined, {
+            {new Date(gameday.date + "T00:00:00").toLocaleDateString(locale === "he" ? "he-IL" : "en-US", {
               weekday: "long",
               month: "short",
               day: "numeric",
             })}
           </div>
-          <div className="text-xs text-[var(--muted)]">Team size {gameday.team_size}</div>
+          <div className="text-xs text-[var(--muted)]">{t("gamedayView.teamSize", { n: gameday.team_size })}</div>
         </div>
         {isManager && (
           <Button
@@ -97,10 +100,10 @@ export function GamedayView({
             variant="danger"
             disabled={busy}
             onClick={() => {
-              if (confirm("Delete this gameday? This can't be undone.")) run(() => deleteGameday(gameday.id));
+              if (confirm(t("gamedayView.deleteConfirm"))) run(() => deleteGameday(gameday.id));
             }}
           >
-            Delete
+            {t("gamedayView.delete")}
           </Button>
         )}
       </Card>
@@ -112,27 +115,29 @@ export function GamedayView({
           disabled={busy}
           onClick={() => run(() => joinWaitlist(gameday.id))}
         >
-          Join waitlist
+          {t("gamedayView.joinWaitlist")}
         </Button>
       )}
       {myWaitlistEntry && (
         <Button variant="secondary" className="w-full" disabled={busy} onClick={() => run(() => leaveWaitlist(gameday.id))}>
-          Leave waitlist (you're #{myWaitlistEntry.position})
+          {t("gamedayView.leaveWaitlistWithPosition", { n: myWaitlistEntry.position })}
         </Button>
       )}
 
       {isManager && (
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           <Button
             className="flex-1"
             disabled={busy || participants.length < 2}
             onClick={() => run(() => generateGamedayTeams(gameday.id))}
           >
-            {teams.length === 0 ? "Generate teams" : "Re-roll teams"}
+            {teams.length === 0 ? t("gamedayView.generateTeams") : t("gamedayView.rerollTeams")}
           </Button>
+          <HelpTooltip text={t("help.generateTeams")} />
+
           {teams.length > 0 && (
             <Button variant={swapMode ? "primary" : "secondary"} onClick={() => setSwapMode((s) => !s)}>
-              {swapMode ? "Done swapping" : "Swap players"}
+              {swapMode ? t("gamedayView.doneSwapping") : t("gamedayView.swapPlayers")}
             </Button>
           )}
         </div>
@@ -171,14 +176,14 @@ export function GamedayView({
 
       <Card className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="font-semibold">Players ({participants.length})</h3>
+          <h3 className="font-semibold">{t("gamedayView.playersCount", { n: participants.length })}</h3>
         </div>
         <div className="space-y-1.5">
           {participants.map((p) => (
             <div key={`${p.kind}:${p.id}`} className="flex items-center gap-3">
               <Avatar src={pPhoto(p)} name={pName(p)} size={32} />
               <span className="flex-1 truncate text-sm">{pName(p)}</span>
-              {p.kind === "guest" && <Badge>Guest</Badge>}
+              {p.kind === "guest" && <Badge>{t("gamedayView.guestBadge")}</Badge>}
               {pHeight(p) && <span className="text-xs text-[var(--muted)]">{formatHeight(pHeight(p))}</span>}
               {isManager && (
                 <button
@@ -186,7 +191,7 @@ export function GamedayView({
                     if (p.kind === "member") run(() => removeParticipant(gameday.id, p.id));
                   }}
                   className="text-[var(--muted)] hover:text-red-400 px-1 text-xs"
-                  title="Remove from gameday"
+                  title={t("gamedayView.removeFromGamedayTitle")}
                 >
                   {p.kind === "member" ? "✕" : ""}
                 </button>
@@ -203,7 +208,7 @@ export function GamedayView({
         )}
         {isManager && (
           <Button size="sm" variant="secondary" onClick={() => setAddingGuest((s) => !s)}>
-            {addingGuest ? "Cancel" : "+ Add guest"}
+            {addingGuest ? t("common.cancel") : t("gamedayView.addGuest")}
           </Button>
         )}
         {isManager && addingGuest && (
@@ -220,7 +225,7 @@ export function GamedayView({
 
       {waitlist.length > 0 && (
         <Card className="space-y-2">
-          <h3 className="font-semibold">Waiting list</h3>
+          <h3 className="font-semibold">{t("gamedayView.waitingList")}</h3>
           {waitlist.map((w) => (
             <div key={w.user_id} className="flex items-center gap-3">
               <span className="text-xs font-bold text-[var(--muted)] w-5">{w.position}</span>
@@ -231,7 +236,7 @@ export function GamedayView({
                   onClick={() => run(() => removeFromWaitlist(gameday.id, w.user_id))}
                   className="text-[var(--muted)] hover:text-red-400 text-xs"
                 >
-                  remove
+                  {t("newGameday.remove")}
                 </button>
               )}
             </div>
@@ -241,7 +246,7 @@ export function GamedayView({
 
       {isManager && availableToAdd.length > 0 && (
         <Card>
-          <h3 className="font-semibold mb-2 text-sm">Add to waitlist</h3>
+          <h3 className="font-semibold mb-2 text-sm">{t("gamedayView.addToWaitlist")}</h3>
           <AddMemberPicker
             options={availableToAdd}
             onAdd={(userId) => run(() => addToWaitlist(gameday.id, userId))}
@@ -252,9 +257,9 @@ export function GamedayView({
       {isManager && (
         <Card className="space-y-2">
           <div className="flex items-center justify-between">
-            <h3 className="font-semibold">Keep apart / together</h3>
+            <h3 className="font-semibold">{t("gamedayView.keepApartTogether")}</h3>
             <Button size="sm" variant="secondary" onClick={() => setAddingRestriction((s) => !s)}>
-              {addingRestriction ? "Cancel" : "+ Add"}
+              {addingRestriction ? t("common.cancel") : t("common.add")}
             </Button>
           </div>
           {restrictions.map((r) => (
@@ -292,24 +297,25 @@ function TeamsDisplay({
   isManager: boolean;
   onChanged: () => void;
 }) {
+  const { t } = useLocale();
   return (
     <div className="space-y-3">
-      {teams.map((t) => {
-        const canEdit = isManager || (t.members ?? []).some((m) => m.kind === "member" && m.id === myUserId);
+      {teams.map((tm) => {
+        const canEdit = isManager || (tm.members ?? []).some((m) => m.kind === "member" && m.id === myUserId);
         return (
-          <Card key={t.id} className="space-y-2">
+          <Card key={tm.id} className="space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <TeamNameEditor gamedayId={gamedayId} team={t} canEdit={canEdit} onDone={onChanged} />
-              <Badge>{(t.members ?? []).length} players</Badge>
+              <TeamNameEditor gamedayId={gamedayId} team={tm} canEdit={canEdit} onDone={onChanged} />
+              <Badge>{t("gamedayView.playersCountBadge", { n: (tm.members ?? []).length })}</Badge>
             </div>
             <div className="space-y-1.5">
-              {(t.members ?? []).map((m) => (
+              {(tm.members ?? []).map((m) => (
                 <div key={`${m.kind}:${m.id}`} className="flex items-center gap-3">
                   <Avatar src={pPhoto(m)} name={pName(m)} size={32} />
                   <span className="flex-1 truncate text-sm">{pName(m)}</span>
                   {pHeight(m) && <span className="text-xs text-[var(--muted)]">{formatHeight(pHeight(m))}</span>}
-                  {m.kind === "guest" && <Badge>Guest</Badge>}
-                  {m.is_reserve && <Badge className="border-amber-500/50 text-amber-400">Reserve</Badge>}
+                  {m.kind === "guest" && <Badge>{t("gamedayView.guestBadge")}</Badge>}
+                  {m.is_reserve && <Badge className="border-amber-500/50 text-amber-400">{t("gamedayView.reserveBadge")}</Badge>}
                   {isManager && (
                     <button
                       type="button"
@@ -318,9 +324,9 @@ function TeamsDisplay({
                         onChanged();
                       }}
                       className="text-xs text-[var(--muted)] hover:text-amber-400 px-1"
-                      title="Bench (remove from team, keep in gameday)"
+                      title={t("gamedayView.benchTitle")}
                     >
-                      bench
+                      {t("gamedayView.bench")}
                     </button>
                   )}
                 </div>
@@ -346,10 +352,11 @@ function UnassignedCard({
   isManager: boolean;
   onDone: () => void;
 }) {
+  const { t } = useLocale();
   return (
     <Card className="space-y-3 border-amber-500/40">
       <div>
-        <h3 className="font-semibold">Not on a team yet</h3>
+        <h3 className="font-semibold">{t("gamedayView.notOnTeamYet")}</h3>
       </div>
       <div className="space-y-2">
         {participants.map((p) => (
@@ -375,6 +382,7 @@ function AssignPicker({
   teams: Team[];
   onDone: () => void;
 }) {
+  const { t } = useLocale();
   const [teamId, setTeamId] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -393,21 +401,22 @@ function AssignPicker({
         onChange={(e) => setTeamId(e.target.value)}
         className="rounded-lg bg-[var(--surface-2)] border border-[var(--border)] px-2 py-1.5 text-xs max-w-[120px]"
       >
-        <option value="">Team…</option>
-        {teams.map((t) => (
-          <option key={t.id} value={t.id}>
-            {t.name} ({(t.members ?? []).length})
+        <option value="">{t("gamedayView.teamPickerPlaceholder")}</option>
+        {teams.map((tm) => (
+          <option key={tm.id} value={tm.id}>
+            {tm.name} ({(tm.members ?? []).length})
           </option>
         ))}
       </select>
       <Button size="sm" onClick={assign} disabled={busy || !teamId}>
-        {busy ? <Spinner /> : "Add"}
+        {busy ? <Spinner /> : t("common.add")}
       </Button>
     </div>
   );
 }
 
 function SwapUI({ gamedayId, teams, onDone }: { gamedayId: string; teams: Team[]; onDone: () => void }) {
+  const { t } = useLocale();
   const [sel, setSel] = useState<{ teamId: string; ref: { kind: "member" | "guest"; id: string } } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -434,25 +443,25 @@ function SwapUI({ gamedayId, teams, onDone }: { gamedayId: string; teams: Team[]
   return (
     <div className="space-y-3">
       <p className="text-sm text-[var(--muted)]">
-        Tap one player, then a player on another team to swap them.
-        {busy && " …swapping"}
+        {t("gamedayView.swapHint")}
+        {busy && t("gamedayView.swapping")}
       </p>
-      {teams.map((t) => (
-        <Card key={t.id} className="space-y-2">
-          <h3 className="font-bold">{t.name}</h3>
+      {teams.map((tm) => (
+        <Card key={tm.id} className="space-y-2">
+          <h3 className="font-bold">{tm.name}</h3>
           <div className="space-y-1.5">
-            {(t.members ?? []).map((m) => {
+            {(tm.members ?? []).map((m) => {
               const selected = sel?.ref.kind === m.kind && sel?.ref.id === m.id;
               return (
                 <button
                   key={`${m.kind}:${m.id}`}
-                  onClick={() => pick(t.id, { kind: m.kind, id: m.id })}
+                  onClick={() => pick(tm.id, { kind: m.kind, id: m.id })}
                   className={`w-full flex items-center gap-3 rounded-lg px-2 py-1.5 border transition ${
                     selected ? "border-[var(--primary)] bg-[var(--primary)]/15" : "border-transparent"
                   }`}
                 >
                   <Avatar src={pPhoto(m)} name={pName(m)} size={32} />
-                  <span className="flex-1 text-left truncate">{pName(m)}</span>
+                  <span className="flex-1 text-start truncate">{pName(m)}</span>
                 </button>
               );
             })}
@@ -464,6 +473,7 @@ function SwapUI({ gamedayId, teams, onDone }: { gamedayId: string; teams: Team[]
 }
 
 function AddMemberPicker({ options, onAdd }: { options: Profile[]; onAdd: (userId: string) => void }) {
+  const { t } = useLocale();
   const [userId, setUserId] = useState("");
   return (
     <div className="flex items-center gap-1.5 mt-2">
@@ -472,7 +482,7 @@ function AddMemberPicker({ options, onAdd }: { options: Profile[]; onAdd: (userI
         onChange={(e) => setUserId(e.target.value)}
         className="flex-1 rounded-lg bg-[var(--surface-2)] border border-[var(--border)] px-2 py-1.5 text-sm"
       >
-        <option value="">Add a player…</option>
+        <option value="">{t("gamedayView.addPlayerPlaceholder")}</option>
         {options.map((p) => (
           <option key={p.id} value={p.id}>
             {p.display_name}
@@ -489,13 +499,14 @@ function AddMemberPicker({ options, onAdd }: { options: Profile[]; onAdd: (userI
         }}
         disabled={!userId}
       >
-        Add
+        {t("common.add")}
       </Button>
     </div>
   );
 }
 
 function AddGuestForm({ sport, gamedayId, onDone }: { sport: SportId; gamedayId: string; onDone: () => void }) {
+  const { t, locale } = useLocale();
   const [name, setName] = useState("");
   const [gender, setGender] = useState<"M" | "F" | null>(null);
   const [height, setHeight] = useState("");
@@ -523,9 +534,14 @@ function AddGuestForm({ sport, gamedayId, onDone }: { sport: SportId; gamedayId:
 
   return (
     <Card className="space-y-3">
-      <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Guest name" />
+      <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("newGameday.guestNamePlaceholder")} />
       <div className="grid grid-cols-2 gap-2">
-        <Input type="number" value={height} onChange={(e) => setHeight(e.target.value)} placeholder="Height (cm)" />
+        <Input
+          type="number"
+          value={height}
+          onChange={(e) => setHeight(e.target.value)}
+          placeholder={t("newGameday.heightCmPlaceholder")}
+        />
         <div className="flex gap-1.5">
           {(["M", "F"] as const).map((g) => (
             <button
@@ -537,7 +553,7 @@ function AddGuestForm({ sport, gamedayId, onDone }: { sport: SportId; gamedayId:
                   : "bg-[var(--surface-2)] border-[var(--border)]"
               }`}
             >
-              {g}
+              {g === "M" ? t("newGameday.genderM") : t("newGameday.genderF")}
             </button>
           ))}
         </div>
@@ -546,7 +562,7 @@ function AddGuestForm({ sport, gamedayId, onDone }: { sport: SportId; gamedayId:
         {SPORTS[sport].params.map((param) => (
           <div key={param.key} className="flex items-center justify-between gap-3">
             <span className="text-sm w-28 shrink-0">
-              {param.label}
+              {paramLabel(param, locale)}
               {param.isOverall && <span className="text-[var(--primary)]"> *</span>}
             </span>
             <div className="flex gap-1 flex-wrap justify-end">
@@ -569,7 +585,7 @@ function AddGuestForm({ sport, gamedayId, onDone }: { sport: SportId; gamedayId:
       </div>
       {error && <p className="text-red-400 text-sm">{error}</p>}
       <Button className="w-full" size="sm" onClick={submit} disabled={!ready || busy}>
-        {busy ? <Spinner /> : "Add guest"}
+        {busy ? <Spinner /> : t("newGameday.addGuest")}
       </Button>
     </Card>
   );
@@ -582,6 +598,7 @@ function RestrictionForm({
   participants: Participant[];
   onAdd: (kind: "apart" | "together", a: { kind: "member" | "guest"; id: string }, b: { kind: "member" | "guest"; id: string }) => void;
 }) {
+  const { t } = useLocale();
   const [a, setA] = useState("");
   const [b, setB] = useState("");
   const [kind, setKind] = useState<"apart" | "together">("apart");
@@ -596,7 +613,7 @@ function RestrictionForm({
     <div className="space-y-2">
       <div className="flex gap-2">
         <select value={a} onChange={(e) => setA(e.target.value)} className="flex-1 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] px-3 py-2 text-sm">
-          <option value="">Player A</option>
+          <option value="">{t("gamedayView.playerA")}</option>
           {participants.map((p) => (
             <option key={`${p.kind}:${p.id}`} value={`${p.kind}:${p.id}`}>
               {pName(p)}
@@ -604,7 +621,7 @@ function RestrictionForm({
           ))}
         </select>
         <select value={b} onChange={(e) => setB(e.target.value)} className="flex-1 rounded-xl bg-[var(--surface-2)] border border-[var(--border)] px-3 py-2 text-sm">
-          <option value="">Player B</option>
+          <option value="">{t("gamedayView.playerB")}</option>
           {participants.map((p) => (
             <option key={`${p.kind}:${p.id}`} value={`${p.kind}:${p.id}`}>
               {pName(p)}
@@ -623,7 +640,7 @@ function RestrictionForm({
                 : "bg-[var(--surface-2)] border-[var(--border)]"
             }`}
           >
-            {k === "apart" ? "Keep apart" : "Keep together"}
+            {k === "apart" ? t("gamedayView.keepApart") : t("gamedayView.keepTogether")}
           </button>
         ))}
         <Button
@@ -638,7 +655,7 @@ function RestrictionForm({
             }
           }}
         >
-          Add
+          {t("common.add")}
         </Button>
       </div>
     </div>

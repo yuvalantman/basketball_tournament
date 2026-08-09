@@ -4,8 +4,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Avatar, Button, Card, Input, Label, Spinner } from "@/components/ui";
-import { cmToFeet, GENDER_LABELS, type Gender } from "@/lib/constants";
+import { cmToFeet, GENDER_LABELS, GENDER_LABELS_HE, type Gender } from "@/lib/constants";
 import type { Profile } from "@/lib/types";
+import { useLocale } from "@/lib/i18n/LocaleContext";
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
@@ -13,6 +14,8 @@ function isValidEmail(email: string): boolean {
 
 export function ProfileEditor({ profile }: { profile: Profile }) {
   const router = useRouter();
+  const { t, locale } = useLocale();
+  const genderLabels = locale === "he" ? GENDER_LABELS_HE : GENDER_LABELS;
   const [displayName, setDisplayName] = useState(profile.display_name);
   const [email, setEmail] = useState(profile.email ?? "");
   const [gender, setGender] = useState<Gender | null>(profile.gender);
@@ -39,7 +42,7 @@ export function ProfileEditor({ profile }: { profile: Profile }) {
 
     const cleanEmail = email.trim().toLowerCase();
     if (cleanEmail && !isValidEmail(cleanEmail)) {
-      setError("Enter a valid email.");
+      setError(t("profile.emailInvalid"));
       setSaving(false);
       return;
     }
@@ -94,18 +97,18 @@ export function ProfileEditor({ profile }: { profile: Profile }) {
         <Avatar src={photoPreview} name={displayName} size={80} />
         <label className="cursor-pointer">
           <span className="inline-block rounded-xl bg-[var(--surface-2)] border border-[var(--border)] px-4 py-2.5 text-sm">
-            Change photo
+            {t("profile.changePhoto")}
           </span>
           <input type="file" accept="image/*" className="hidden" onChange={onPhoto} />
         </label>
       </div>
 
       <div>
-        <Label>Username</Label>
+        <Label>{t("profile.username")}</Label>
         <Input value={`@${profile.username}`} disabled />
       </div>
       <div>
-        <Label>Email</Label>
+        <Label>{t("profile.email")}</Label>
         <Input
           type="email"
           value={email}
@@ -113,17 +116,15 @@ export function ProfileEditor({ profile }: { profile: Profile }) {
           placeholder="you@example.com"
         />
         <p className="text-xs text-[var(--muted)] mt-1">
-          {profile.email
-            ? "Used to send you a password reset link if you ever forget your password."
-            : "Add this so you can use “Forgot password” if you ever get locked out."}
+          {profile.email ? t("profile.emailHintHas") : t("profile.emailHintMissing")}
         </p>
       </div>
       <div>
-        <Label>Display name</Label>
+        <Label>{t("profile.displayName")}</Label>
         <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
       </div>
       <div>
-        <Label>Gender</Label>
+        <Label>{t("profile.gender")}</Label>
         <div className="flex gap-2">
           {(Object.keys(GENDER_LABELS) as Gender[]).map((g) => (
             <button
@@ -135,14 +136,14 @@ export function ProfileEditor({ profile }: { profile: Profile }) {
                   : "bg-[var(--surface-2)] border-[var(--border)]"
               }`}
             >
-              {GENDER_LABELS[g]}
+              {genderLabels[g]}
             </button>
           ))}
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <Label>Height (cm){heightCm ? ` · ${cmToFeet(Number(heightCm))}` : ""}</Label>
+          <Label>{t("profile.heightCm")}{heightCm ? ` · ${cmToFeet(Number(heightCm))}` : ""}</Label>
           <Input
             type="number"
             inputMode="numeric"
@@ -151,7 +152,7 @@ export function ProfileEditor({ profile }: { profile: Profile }) {
           />
         </div>
         <div>
-          <Label>Weight (kg)</Label>
+          <Label>{t("profile.weightKg")}</Label>
           <Input
             type="number"
             inputMode="numeric"
@@ -162,9 +163,9 @@ export function ProfileEditor({ profile }: { profile: Profile }) {
       </div>
 
       {error && <p className="text-red-400 text-sm">{error}</p>}
-      {saved && <p className="text-green-400 text-sm">Saved!</p>}
+      {saved && <p className="text-green-400 text-sm">{t("common.saved")}</p>}
       <Button className="w-full" size="lg" onClick={save} disabled={saving}>
-        {saving ? <Spinner /> : "Save profile"}
+        {saving ? <Spinner /> : t("profile.saveProfile")}
       </Button>
     </Card>
   );

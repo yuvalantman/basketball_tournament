@@ -142,6 +142,30 @@ export async function removeMember(groupId: string, userId: string): Promise<Act
   }
 }
 
+// Owner grants (or revokes) a member's rating power — their own ratings of
+// others will count `weight`x instead of the default 1x. Only self-service
+// ("normal") ratings are affected; see app/actions/rating.ts's upsertRating.
+export async function setMemberRatingWeight(
+  groupId: string,
+  userId: string,
+  weight: 1 | 2 | 3,
+): Promise<ActionResult> {
+  try {
+    await requireGroupOwner(groupId);
+    const admin = createAdminClient();
+    const { error } = await admin
+      .from("group_players")
+      .update({ rating_weight: weight })
+      .eq("group_id", groupId)
+      .eq("user_id", userId);
+    if (error) throw new Error(error.message);
+    revalidatePath(`/group/${groupId}`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
 // Owner-only, deletes the group entirely (roster/ratings/gamedays cascade).
 export async function deleteGroup(groupId: string): Promise<ActionResult> {
   try {

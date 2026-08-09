@@ -33,6 +33,7 @@ export type GroupPlayer = {
   group_id: string;
   user_id: string;
   joined_at: string;
+  rating_weight: number;
   profile?: Profile;
 };
 

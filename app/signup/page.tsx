@@ -6,7 +6,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { isValidUsername, normalizeUsername } from "@/lib/username";
 import { Button, Input, Label, Spinner, Avatar } from "@/components/ui";
-import { GENDER_LABELS, type Gender } from "@/lib/constants";
+import { GENDER_LABELS, GENDER_LABELS_HE, type Gender } from "@/lib/constants";
+import { useLocale } from "@/lib/i18n/LocaleContext";
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
@@ -14,6 +15,8 @@ function isValidEmail(email: string): boolean {
 
 export default function SignupPage() {
   const router = useRouter();
+  const { t, locale } = useLocale();
+  const genderLabels = locale === "he" ? GENDER_LABELS_HE : GENDER_LABELS;
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
@@ -38,19 +41,19 @@ export default function SignupPage() {
     setError(null);
 
     if (!isValidUsername(username)) {
-      setError("Username must be 3–20 chars: letters, numbers, underscore.");
+      setError(t("auth.usernameFormatError"));
       return;
     }
     if (!isValidEmail(email)) {
-      setError("Enter a valid email — it's how you'll reset your password if you forget it.");
+      setError(t("auth.emailFormatError"));
       return;
     }
     if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
+      setError(t("auth.passwordTooShort"));
       return;
     }
     if (!gender) {
-      setError("Please select a gender.");
+      setError(t("auth.genderRequired"));
       return;
     }
 
@@ -69,8 +72,8 @@ export default function SignupPage() {
     if (signUpError || !signUpData.user) {
       setError(
         signUpError?.message?.includes("already")
-          ? "That email is already registered."
-          : signUpError?.message ?? "Could not sign up.",
+          ? t("auth.emailAlreadyRegistered")
+          : signUpError?.message ?? t("auth.signupFailed"),
       );
       setLoading(false);
       return;
@@ -122,17 +125,15 @@ export default function SignupPage() {
 
   return (
     <main className="min-h-dvh flex flex-col justify-center px-6 max-w-md mx-auto w-full py-10">
-      <h1 className="text-2xl font-extrabold mb-1">Create your player</h1>
-      <p className="text-[var(--muted)] mb-6">
-        Your photo &amp; stats show up when teammates rate you.
-      </p>
+      <h1 className="text-2xl font-extrabold mb-1">{t("auth.createPlayer")}</h1>
+      <p className="text-[var(--muted)] mb-6">{t("auth.createPlayerSubtitle")}</p>
 
       <form onSubmit={onSubmit} className="space-y-4">
         <div className="flex items-center gap-4">
           <Avatar src={photoPreview} name={displayName || username || "?"} size={72} />
           <label className="cursor-pointer">
             <span className="inline-block rounded-xl bg-[var(--surface-2)] border border-[var(--border)] px-4 py-2.5 text-sm">
-              {photo ? "Change photo" : "Add photo"}
+              {photo ? t("auth.changePhoto") : t("auth.addPhoto")}
             </span>
             <input
               type="file"
@@ -145,7 +146,7 @@ export default function SignupPage() {
         </div>
 
         <div>
-          <Label htmlFor="username">Username</Label>
+          <Label htmlFor="username">{t("auth.username")}</Label>
           <Input
             id="username"
             autoCapitalize="none"
@@ -156,7 +157,7 @@ export default function SignupPage() {
           />
         </div>
         <div>
-          <Label htmlFor="displayName">Display name</Label>
+          <Label htmlFor="displayName">{t("auth.displayName")}</Label>
           <Input
             id="displayName"
             value={displayName}
@@ -165,7 +166,7 @@ export default function SignupPage() {
           />
         </div>
         <div>
-          <Label htmlFor="email">Email</Label>
+          <Label htmlFor="email">{t("auth.email")}</Label>
           <Input
             id="email"
             type="email"
@@ -175,24 +176,22 @@ export default function SignupPage() {
             placeholder="you@example.com"
             required
           />
-          <p className="text-xs text-[var(--muted)] mt-1">
-            Only used to send you a password reset link if you ever need one.
-          </p>
+          <p className="text-xs text-[var(--muted)] mt-1">{t("auth.emailHint")}</p>
         </div>
         <div>
-          <Label htmlFor="password">Password</Label>
+          <Label htmlFor="password">{t("auth.password")}</Label>
           <Input
             id="password"
             type="password"
             autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="at least 6 characters"
+            placeholder={t("auth.passwordHint")}
             required
           />
         </div>
         <div>
-          <Label>Gender</Label>
+          <Label>{t("auth.gender")}</Label>
           <div className="flex gap-2">
             {(Object.keys(GENDER_LABELS) as Gender[]).map((g) => (
               <button
@@ -205,14 +204,14 @@ export default function SignupPage() {
                     : "bg-[var(--surface-2)] border-[var(--border)]"
                 }`}
               >
-                {GENDER_LABELS[g]}
+                {genderLabels[g]}
               </button>
             ))}
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <Label htmlFor="height">Height (cm)</Label>
+            <Label htmlFor="height">{t("auth.heightCm")}</Label>
             <Input
               id="height"
               type="number"
@@ -223,7 +222,7 @@ export default function SignupPage() {
             />
           </div>
           <div>
-            <Label htmlFor="weight">Weight (kg)</Label>
+            <Label htmlFor="weight">{t("auth.weightKg")}</Label>
             <Input
               id="weight"
               type="number"
@@ -238,14 +237,14 @@ export default function SignupPage() {
         {error && <p className="text-red-400 text-sm">{error}</p>}
 
         <Button type="submit" size="lg" className="w-full" disabled={loading}>
-          {loading ? <Spinner /> : "Sign up & play"}
+          {loading ? <Spinner /> : t("auth.signUpAndPlay")}
         </Button>
       </form>
 
       <p className="text-center text-[var(--muted)] mt-6">
-        Already have an account?{" "}
+        {t("auth.alreadyHaveAccount")}{" "}
         <Link href="/login" className="text-[var(--primary)] font-semibold">
-          Log in
+          {t("auth.logIn")}
         </Link>
       </p>
     </main>

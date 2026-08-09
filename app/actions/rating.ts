@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { SPORTS, overallParam, type SportId } from "@/lib/sports";
 import type { ManagerInspection } from "@/lib/types";
-import { type ActionResult, requireGroupOwner, requireUser } from "./_shared";
+import { type ActionResult, requireGroupMember, requireGroupOwner, requireUser } from "./_shared";
 
 function cleanValues(sport: SportId, values: Record<string, number>): Record<string, number> {
   const allowed = new Set(SPORTS[sport].params.map((p) => p.key));
@@ -20,20 +20,30 @@ function cleanValues(sport: SportId, values: Record<string, number>): Record<str
 
 // Self-service: a rater submits/edits their rating of another group member.
 // Partial ratings are fine — only the sport's Overall attribute (if it has
-// one) is mandatory. Always weight=1, source='normal' (also enforced by the
-// ratings table's RLS WITH CHECK, so this can never be forged from a client
-// bypassing the UI).
+// one) is mandatory. Always source='normal'. Weight is normally the rater's
+// manager-granted rating_weight (1x by default, 2x/3x if the group's manager
+// granted it — see setMemberRatingWeight) — pass ignoreGrantedWeight to force
+// 1x regardless (used by the gameday quick-rate shortcut, which is meant to
+// always be a low-effort/low-influence rating).
+//
+// Writes via the admin client (like submitManagerRating) rather than through
+// RLS, since the rater's granted weight has to be looked up server-side —
+// never trust a client-passed weight. The ratings table's RLS WITH CHECK
+// still hardcodes weight=1/source='normal' for any (theoretical) direct
+// anon-key write, as a defense-in-depth backstop now that the app itself
+// always goes through here.
 export async function upsertRating(
   groupId: string,
   rateeId: string,
   values: Record<string, number>,
+  opts?: { ignoreGrantedWeight?: boolean },
 ): Promise<ActionResult> {
   try {
-    const uid = await requireUser();
+    const uid = await requireGroupMember(groupId);
     if (uid === rateeId) return { ok: false, error: "You can't rate yourself." };
-    const supabase = await createClient();
+    const admin = createAdminClient();
 
-    const { data: group } = await supabase.from("groups").select("sport").eq("id", groupId).single();
+    const { data: group } = await admin.from("groups").select("sport").eq("id", groupId).single();
     if (!group) return { ok: false, error: "Group not found." };
     const sport = group.sport as SportId;
 
@@ -43,13 +53,24 @@ export async function upsertRating(
       return { ok: false, error: `${overall.label} is required.` };
     }
 
-    const { error } = await supabase.from("ratings").upsert(
+    let weight = 1;
+    if (!opts?.ignoreGrantedWeight) {
+      const { data: gp } = await admin
+        .from("group_players")
+        .select("rating_weight")
+        .eq("group_id", groupId)
+        .eq("user_id", uid)
+        .single();
+      weight = gp?.rating_weight ?? 1;
+    }
+
+    const { error } = await admin.from("ratings").upsert(
       {
         group_id: groupId,
         rater_id: uid,
         ratee_id: rateeId,
         values: clean,
-        weight: 1,
+        weight,
         source: "normal",
         updated_at: new Date().toISOString(),
       },

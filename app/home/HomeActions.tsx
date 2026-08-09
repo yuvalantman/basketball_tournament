@@ -3,20 +3,23 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Card, Input, Label, Spinner } from "@/components/ui";
-import { SPORT_IDS, SPORT_LABELS, type SportId } from "@/lib/sports";
+import { HelpTooltip } from "@/components/HelpTooltip";
+import { SPORT_IDS, SPORT_LABELS, SPORT_LABELS_HE, type SportId } from "@/lib/sports";
 import { createGroup, joinGroup } from "@/app/actions/group";
+import { useLocale } from "@/lib/i18n/LocaleContext";
 
 export function HomeActions() {
+  const { t } = useLocale();
   const [mode, setMode] = useState<"none" | "create" | "join">("none");
 
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3">
         <Button size="lg" onClick={() => setMode(mode === "create" ? "none" : "create")}>
-          + New group
+          {t("home.newGroup")}
         </Button>
         <Button size="lg" variant="secondary" onClick={() => setMode(mode === "join" ? "none" : "join")}>
-          Join by code
+          {t("home.joinByCode")}
         </Button>
       </div>
       {mode === "create" && <CreateForm />}
@@ -27,6 +30,8 @@ export function HomeActions() {
 
 function CreateForm() {
   const router = useRouter();
+  const { t, locale } = useLocale();
+  const sportLabels = locale === "he" ? SPORT_LABELS_HE : SPORT_LABELS;
   const [name, setName] = useState("");
   const [sport, setSport] = useState<SportId>("basketball");
   const [loading, setLoading] = useState(false);
@@ -48,12 +53,15 @@ function CreateForm() {
   return (
     <Card className="space-y-4 mt-1">
       <div>
-        <Label>Group name</Label>
+        <Label>{t("home.groupName")}</Label>
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Friday Night Hoops" />
       </div>
 
       <div>
-        <Label>Sport (can&apos;t be changed later)</Label>
+        <Label className="flex items-center gap-1.5">
+          {t("home.sportLocked")}
+          <HelpTooltip text={t("help.sportLocked")} />
+        </Label>
         <div className="grid grid-cols-3 gap-2">
           {SPORT_IDS.map((s) => (
             <button
@@ -65,7 +73,7 @@ function CreateForm() {
                   : "bg-[var(--surface-2)] border-[var(--border)]"
               }`}
             >
-              {SPORT_LABELS[s]}
+              {sportLabels[s]}
             </button>
           ))}
         </div>
@@ -73,7 +81,7 @@ function CreateForm() {
 
       {error && <p className="text-red-400 text-sm">{error}</p>}
       <Button className="w-full" size="lg" onClick={submit} disabled={loading}>
-        {loading ? <Spinner /> : "Create group"}
+        {loading ? <Spinner /> : t("home.createGroup")}
       </Button>
     </Card>
   );
@@ -81,6 +89,7 @@ function CreateForm() {
 
 function JoinForm() {
   const router = useRouter();
+  const { t } = useLocale();
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -100,7 +109,10 @@ function JoinForm() {
 
   return (
     <Card className="space-y-3 mt-1">
-      <Label>Enter group code</Label>
+      <Label className="flex items-center gap-1.5">
+        {t("home.enterGroupCode")}
+        <HelpTooltip text={t("help.groupCode")} />
+      </Label>
       <Input
         value={code}
         onChange={(e) => setCode(e.target.value.toUpperCase())}
@@ -110,7 +122,7 @@ function JoinForm() {
       />
       {error && <p className="text-red-400 text-sm">{error}</p>}
       <Button className="w-full" size="lg" onClick={submit} disabled={loading}>
-        {loading ? <Spinner /> : "Join"}
+        {loading ? <Spinner /> : t("home.join")}
       </Button>
     </Card>
   );

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getCachedUser } from "@/lib/supabase/server";
 import type {
   Gameday,
   GamedayGuest,
@@ -20,7 +20,7 @@ export async function getMyProfile(): Promise<Profile | null> {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getCachedUser();
   if (!user) return null;
   const { data } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
   return data as Profile | null;
@@ -38,6 +38,20 @@ export async function getRoster(groupId: string): Promise<Profile[]> {
   return (data ?? [])
     .map((r) => r.profiles as unknown as Profile)
     .sort((a, b) => a.display_name.localeCompare(b.display_name));
+}
+
+// Manager-granted rating weight per member — visible to the whole group
+// (gp_select already permits reading any member's full group_players row),
+// so a "2x rating power" badge can be shown to everyone, not just the owner.
+export async function getGroupPlayerWeights(groupId: string): Promise<Record<string, number>> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("group_players")
+    .select("user_id, rating_weight")
+    .eq("group_id", groupId);
+  const out: Record<string, number> = {};
+  for (const row of data ?? []) out[row.user_id as string] = row.rating_weight as number;
+  return out;
 }
 
 // Resolve a list of (kind, participant_id) refs into full Participant
@@ -76,7 +90,7 @@ export async function getGamedaysForGroup(groupId: string): Promise<GamedayWithS
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getCachedUser();
   const uid = user?.id;
 
   const { data: gamedays } = await supabase
@@ -163,25 +177,51 @@ export type GamedayDetail = {
 export async function getGamedayDetail(gamedayId: string): Promise<GamedayDetail | null> {
   const supabase = await createClient();
 
-  const { data: gameday } = await supabase.from("gamedays").select("*").eq("id", gamedayId).maybeSingle();
+  // Wave 1: everything here only depends on gamedayId, not on each other's
+  // results, so they run concurrently instead of as 5 sequential round trips.
+  const [
+    { data: gameday },
+    { data: participantRows },
+    { data: waitlistRows },
+    { data: teamRows },
+    { data: restrictionRows },
+  ] = await Promise.all([
+    supabase.from("gamedays").select("*").eq("id", gamedayId).maybeSingle(),
+    supabase
+      .from("gameday_participants")
+      .select("kind, participant_id, added_at")
+      .eq("gameday_id", gamedayId)
+      .order("added_at", { ascending: true }),
+    supabase
+      .from("gameday_waitlist")
+      .select("gameday_id, user_id, added_at, profiles(*)")
+      .eq("gameday_id", gamedayId)
+      .order("added_at", { ascending: true }),
+    supabase.from("teams").select("*").eq("gameday_id", gamedayId).order("seed"),
+    supabase.from("gameday_restrictions").select("*").eq("gameday_id", gamedayId),
+  ]);
   if (!gameday) return null;
 
-  const { data: participantRows } = await supabase
-    .from("gameday_participants")
-    .select("kind, participant_id, added_at")
-    .eq("gameday_id", gamedayId)
-    .order("added_at", { ascending: true });
+  const teamIds = (teamRows ?? []).map((t) => t.id);
+  const restrictionRefs = (restrictionRows ?? []).flatMap((r) => [
+    { kind: r.a_kind as ParticipantKind, participant_id: r.a_id },
+    { kind: r.b_kind as ParticipantKind, participant_id: r.b_id },
+  ]);
 
-  const resolved = await resolveParticipants(supabase, participantRows ?? []);
+  // Wave 2: memberRows needs teamIds from wave 1; the three participant
+  // resolutions are independent of each other, so they run concurrently too.
+  const [{ data: memberRows }, resolved, restrictionResolved] = await Promise.all([
+    teamIds.length
+      ? supabase.from("team_members").select("team_id, kind, participant_id, is_reserve").in("team_id", teamIds)
+      : Promise.resolve({ data: [] as { team_id: string; kind: ParticipantKind; participant_id: string; is_reserve: boolean }[] }),
+    resolveParticipants(supabase, participantRows ?? []),
+    resolveParticipants(supabase, restrictionRefs),
+  ]);
+
   const participants = (participantRows ?? [])
     .map((r) => resolved.get(`${r.kind}:${r.participant_id}`))
     .filter((p): p is Participant => p != null);
 
-  const { data: waitlistRows } = await supabase
-    .from("gameday_waitlist")
-    .select("gameday_id, user_id, added_at, profiles(*)")
-    .eq("gameday_id", gamedayId)
-    .order("added_at", { ascending: true });
   const waitlist: WaitlistEntry[] = (waitlistRows ?? []).map((w, i) => ({
     gameday_id: w.gameday_id,
     user_id: w.user_id,
@@ -190,11 +230,6 @@ export async function getGamedayDetail(gamedayId: string): Promise<GamedayDetail
     position: i + 1,
   }));
 
-  const { data: teamRows } = await supabase.from("teams").select("*").eq("gameday_id", gamedayId).order("seed");
-  const teamIds = (teamRows ?? []).map((t) => t.id);
-  const { data: memberRows } = teamIds.length
-    ? await supabase.from("team_members").select("team_id, kind, participant_id, is_reserve").in("team_id", teamIds)
-    : { data: [] as { team_id: string; kind: ParticipantKind; participant_id: string; is_reserve: boolean }[] };
   const memberResolved = await resolveParticipants(supabase, memberRows ?? []);
   const teams: Team[] = (teamRows ?? []).map((t) => ({
     ...(t as Team),
@@ -207,15 +242,6 @@ export async function getGamedayDetail(gamedayId: string): Promise<GamedayDetail
       .filter((p): p is Participant & { is_reserve: boolean } => p != null),
   }));
 
-  const { data: restrictionRows } = await supabase
-    .from("gameday_restrictions")
-    .select("*")
-    .eq("gameday_id", gamedayId);
-  const restrictionRefs = (restrictionRows ?? []).flatMap((r) => [
-    { kind: r.a_kind as ParticipantKind, participant_id: r.a_id },
-    { kind: r.b_kind as ParticipantKind, participant_id: r.b_id },
-  ]);
-  const restrictionResolved = await resolveParticipants(supabase, restrictionRefs);
   const restrictions: GamedayRestriction[] = (restrictionRows ?? [])
     .map((r) => {
       const a = restrictionResolved.get(`${r.a_kind}:${r.a_id}`);
@@ -234,7 +260,7 @@ export async function getMyRatedSet(groupId: string): Promise<Set<string>> {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getCachedUser();
   if (!user) return new Set();
   const { data } = await supabase
     .from("ratings")

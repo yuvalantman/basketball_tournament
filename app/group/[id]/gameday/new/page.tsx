@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { getGroup, getMyProfile, getRoster } from "@/lib/data";
 import { getMissingRatingsBanner } from "@/app/actions/stats";
+import { getServerT } from "@/lib/i18n/server";
 import { NewGamedayForm } from "./NewGamedayForm";
 
 export default async function NewGamedayPage({ params }: { params: Promise<{ id: string }> }) {
@@ -11,6 +12,7 @@ export default async function NewGamedayPage({ params }: { params: Promise<{ id:
 
   const group = await getGroup(id);
   if (!group) notFound();
+  const { t } = await getServerT();
 
   const roster = await getRoster(id);
   const missing = await getMissingRatingsBanner(
@@ -22,9 +24,9 @@ export default async function NewGamedayPage({ params }: { params: Promise<{ id:
     <main className="max-w-md mx-auto w-full px-4 pb-28 pt-5">
       <header className="flex items-center justify-between mb-4">
         <Link href={`/group/${id}`} className="text-[var(--muted)] text-sm">
-          ← {group.name}
+          {t("common.backArrow")} {group.name}
         </Link>
-        <h1 className="font-bold">New gameday</h1>
+        <h1 className="font-bold">{t("newGameday.pageTitle")}</h1>
         <span className="w-12" />
       </header>
 

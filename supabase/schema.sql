@@ -20,7 +20,10 @@ create extension if not exists pgcrypto;
 -- username to a synthetic email under the hood; the username lives here.
 create table if not exists public.profiles (
   id          uuid primary key references auth.users (id) on delete cascade,
-  username    text unique not null,
+  -- Format enforced at the DB level too (matches lib/username.ts's
+  -- isValidUsername regex) — the JS check alone can be bypassed by a direct
+  -- API call, and this format feeds the username->login-email resolution.
+  username    text unique not null check (username ~ '^[a-z0-9_]{2,20}$'),
   display_name text not null,
   gender      text check (gender in ('M','F')),
   height_cm   numeric,
@@ -53,6 +56,11 @@ create table if not exists public.group_players (
   group_id  uuid not null references public.groups (id) on delete cascade,
   user_id   uuid not null references public.profiles (id) on delete cascade,
   joined_at timestamptz not null default now(),
+  -- Manager-granted rating power: this member's own (source='normal) ratings
+  -- of others count `rating_weight`x in the weighted average, instead of the
+  -- default 1x. Distinct from ratings.weight/source below, which power a
+  -- separate feature (the manager's own one-off weighted rating of someone).
+  rating_weight smallint not null default 1 check (rating_weight in (1,2,3)),
   primary key (group_id, user_id)
 );
 
@@ -408,9 +416,14 @@ create policy team_members_select on public.team_members
 -- auth.users row of their own).
 -- -----------------------------------------------------------------------------
 
-insert into storage.buckets (id, name, public)
-values ('avatars', 'avatars', true)
-on conflict (id) do nothing;
+-- file_size_limit (bytes) and allowed_mime_types are enforced by Supabase
+-- Storage itself on every upload — defense in depth beyond the upload form's
+-- client-side accept="image/*" hint, which a direct API call could bypass.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('avatars', 'avatars', true, 5242880, array['image/jpeg','image/png','image/webp','image/gif'])
+on conflict (id) do update set
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
 
 -- Anyone can view avatars (public bucket); authenticated users can upload/manage
 -- files under a folder named after their own user id (e.g. <uid>/photo.jpg).

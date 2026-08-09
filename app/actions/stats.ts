@@ -65,8 +65,22 @@ export async function getMissingRatingsBanner(
   memberIds: string[],
 ): Promise<{ items: MissingRatingsInfo[] } | null> {
   const uid = await getCurrentUserId();
-  if (!uid || memberIds.length === 0) return { items: [] };
+  if (!uid) return null;
   const admin = createAdminClient();
+
+  // Unlike a UI-driven call (which only ever passes the caller's own group's
+  // roster), this is a directly-callable server action — verify membership
+  // explicitly rather than trusting the groupId/memberIds a client sends,
+  // matching the same check getPlayerCards already does above.
+  const { data: membership } = await admin
+    .from("group_players")
+    .select("user_id")
+    .eq("group_id", groupId)
+    .eq("user_id", uid)
+    .maybeSingle();
+  if (!membership) return null;
+
+  if (memberIds.length === 0) return { items: [] };
 
   const { data: group } = await admin.from("groups").select("sport").eq("id", groupId).single();
   if (!group) return null;

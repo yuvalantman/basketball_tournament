@@ -3,12 +3,15 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Avatar, Badge, Button, Card, Input, Label, Spinner } from "@/components/ui";
+import { HelpTooltip } from "@/components/HelpTooltip";
 import { GAMEDAY_TEAM_SIZE_MAX, GAMEDAY_TEAM_SIZE_MIN } from "@/lib/constants";
-import { SPORTS, overallParam, type SportId } from "@/lib/sports";
+import { SPORTS, overallParam, paramLabel, type SportId } from "@/lib/sports";
 import type { Profile } from "@/lib/types";
 import type { MissingRatingsInfo } from "@/app/actions/stats";
 import { createGameday, addGuest } from "@/app/actions/gameday";
 import { upsertRating } from "@/app/actions/rating";
+import { useLocale } from "@/lib/i18n/LocaleContext";
+import { pluralKey, type Locale } from "@/lib/i18n";
 
 type StagedGuest = {
   tempId: string;
@@ -32,7 +35,8 @@ export function NewGamedayForm({
   missingByUserId: Record<string, MissingRatingsInfo>;
 }) {
   const router = useRouter();
-  const [name, setName] = useState("Gameday");
+  const { t } = useLocale();
+  const [name, setName] = useState(t("newGameday.defaultName"));
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [teamSize, setTeamSize] = useState(5);
   const [selected, setSelected] = useState<Set<string>>(new Set([myUserId]));
@@ -77,16 +81,19 @@ export function NewGamedayForm({
   return (
     <div className="space-y-4">
       <div>
-        <Label>Name</Label>
+        <Label>{t("newGameday.name")}</Label>
         <Input value={name} onChange={(e) => setName(e.target.value)} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <Label>Date</Label>
+          <Label>{t("newGameday.date")}</Label>
           <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </div>
         <div>
-          <Label>Team size</Label>
+          <Label className="flex items-center gap-1.5">
+            {t("newGameday.teamSize")}
+            <HelpTooltip text={t("help.teamSize")} />
+          </Label>
           <Input
             type="number"
             min={GAMEDAY_TEAM_SIZE_MIN}
@@ -100,17 +107,15 @@ export function NewGamedayForm({
       {selectedMissing.length > 0 && (
         <Card className="bg-amber-500/10 border-amber-500/40">
           <p className="text-sm text-amber-400 font-medium">
-            {selectedMissing.length} selected player{selectedMissing.length !== 1 ? "s" : ""} have missing ratings.
+            {t(pluralKey(selectedMissing.length, "newGameday.missingRatingsWarning"), { n: selectedMissing.length })}
           </p>
-          <p className="text-xs text-[var(--muted)] mt-1">
-            Tap a highlighted player below to rate them yourself before generating teams.
-          </p>
+          <p className="text-xs text-[var(--muted)] mt-1">{t("newGameday.missingRatingsHint")}</p>
         </Card>
       )}
 
       <div>
         <div className="flex items-center justify-between mb-2">
-          <Label className="mb-0">Who&apos;s coming ({selected.size})</Label>
+          <Label className="mb-0">{t("newGameday.whosComing", { n: selected.size })}</Label>
         </div>
         <div className="space-y-1.5">
           {roster.map((p) => {
@@ -120,7 +125,7 @@ export function NewGamedayForm({
               <div key={p.id}>
                 <button
                   onClick={() => toggle(p.id)}
-                  className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 border transition text-left ${
+                  className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 border transition text-start ${
                     isSelected
                       ? "border-[var(--primary)] bg-[var(--primary)]/10"
                       : missing
@@ -130,25 +135,26 @@ export function NewGamedayForm({
                 >
                   <Avatar src={p.photo_url} name={p.display_name} size={36} />
                   <span className="flex-1 truncate">{p.display_name}</span>
-                  {missing && <Badge className="border-amber-500/50 text-amber-400">missing ratings</Badge>}
+                  {missing && <Badge className="border-amber-500/50 text-amber-400">{t("newGameday.missingRatingsBadge")}</Badge>}
                   {isSelected && <span className="text-[var(--primary)]">✓</span>}
                 </button>
                 {isSelected && missing && (
-                  <div className="pl-3 mt-1">
+                  <div className="ps-3 mt-1">
                     {quickRateId === p.id ? (
                       <QuickRateForm
                         sport={sport}
-                        groupId={groupId}
                         playerName={p.display_name}
                         onDone={() => {
                           setQuickRateId(null);
                           router.refresh();
                         }}
-                        onSubmit={(values) => upsertRating(groupId, p.id, values)}
+                        onSubmit={(values) =>
+                          upsertRating(groupId, p.id, values, { ignoreGrantedWeight: true })
+                        }
                       />
                     ) : (
                       <button onClick={() => setQuickRateId(p.id)} className="text-xs text-amber-400 underline">
-                        Rate {p.display_name} now
+                        {t("newGameday.rateNow", { name: p.display_name })}
                       </button>
                     )}
                   </div>
@@ -161,9 +167,9 @@ export function NewGamedayForm({
 
       <div>
         <div className="flex items-center justify-between mb-2">
-          <Label className="mb-0">Guests ({guests.length})</Label>
+          <Label className="mb-0">{t("newGameday.guests", { n: guests.length })}</Label>
           <Button size="sm" variant="secondary" onClick={() => setAddingGuest((s) => !s)}>
-            {addingGuest ? "Cancel" : "+ Add guest"}
+            {addingGuest ? t("common.cancel") : t("newGameday.addGuest")}
           </Button>
         </div>
         {guests.map((g) => (
@@ -173,7 +179,7 @@ export function NewGamedayForm({
               onClick={() => setGuests((gs) => gs.filter((x) => x.tempId !== g.tempId))}
               className="text-[var(--muted)] hover:text-red-400 text-xs"
             >
-              remove
+              {t("newGameday.remove")}
             </button>
           </Card>
         ))}
@@ -190,7 +196,7 @@ export function NewGamedayForm({
 
       {error && <p className="text-red-400 text-sm">{error}</p>}
       <Button className="w-full" size="lg" onClick={submit} disabled={busy || selected.size + guests.length < 2}>
-        {busy ? <Spinner /> : "Create gameday"}
+        {busy ? <Spinner /> : t("newGameday.createGameday")}
       </Button>
     </div>
   );
@@ -200,10 +206,12 @@ export function NewGamedayForm({
 // quick-rate widget so both use the exact same rating UI as the Rate tab.
 function ParamPicker({
   sport,
+  locale,
   values,
   onChange,
 }: {
   sport: SportId;
+  locale: Locale;
   values: Record<string, number>;
   onChange: (v: Record<string, number>) => void;
 }) {
@@ -212,7 +220,7 @@ function ParamPicker({
       {SPORTS[sport].params.map((param) => (
         <div key={param.key} className="flex items-center justify-between gap-3">
           <span className="text-sm w-28 shrink-0">
-            {param.label}
+            {paramLabel(param, locale)}
             {param.isOverall && <span className="text-[var(--primary)]"> *</span>}
           </span>
           <div className="flex gap-1 flex-wrap justify-end">
@@ -237,6 +245,7 @@ function ParamPicker({
 }
 
 function GuestForm({ sport, onAdd }: { sport: SportId; onAdd: (g: StagedGuest) => void }) {
+  const { t, locale } = useLocale();
   const [name, setName] = useState("");
   const [gender, setGender] = useState<"M" | "F" | null>(null);
   const [height, setHeight] = useState("");
@@ -258,9 +267,14 @@ function GuestForm({ sport, onAdd }: { sport: SportId; onAdd: (g: StagedGuest) =
 
   return (
     <Card className="space-y-3">
-      <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Guest name" />
+      <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("newGameday.guestNamePlaceholder")} />
       <div className="grid grid-cols-2 gap-2">
-        <Input type="number" value={height} onChange={(e) => setHeight(e.target.value)} placeholder="Height (cm)" />
+        <Input
+          type="number"
+          value={height}
+          onChange={(e) => setHeight(e.target.value)}
+          placeholder={t("newGameday.heightCmPlaceholder")}
+        />
         <div className="flex gap-1.5">
           {(["M", "F"] as const).map((g) => (
             <button
@@ -272,19 +286,17 @@ function GuestForm({ sport, onAdd }: { sport: SportId; onAdd: (g: StagedGuest) =
                   : "bg-[var(--surface-2)] border-[var(--border)]"
               }`}
             >
-              {g}
+              {g === "M" ? t("newGameday.genderM") : t("newGameday.genderF")}
             </button>
           ))}
         </div>
       </div>
 
-      <p className="text-xs text-[var(--muted)]">
-        You&apos;ll be this guest&apos;s only rater — guests exist only within this gameday.
-      </p>
-      <ParamPicker sport={sport} values={values} onChange={setValues} />
+      <p className="text-xs text-[var(--muted)]">{t("newGameday.guestRaterHint")}</p>
+      <ParamPicker sport={sport} locale={locale} values={values} onChange={setValues} />
 
       <Button className="w-full" size="sm" onClick={add} disabled={!ready}>
-        Add guest
+        {t("newGameday.addGuest")}
       </Button>
     </Card>
   );
@@ -292,18 +304,16 @@ function GuestForm({ sport, onAdd }: { sport: SportId; onAdd: (g: StagedGuest) =
 
 function QuickRateForm({
   sport,
-  groupId,
   playerName,
   onDone,
   onSubmit,
 }: {
   sport: SportId;
-  groupId: string;
   playerName: string;
   onDone: () => void;
   onSubmit: (values: Record<string, number>) => Promise<{ ok: boolean; error?: string }>;
 }) {
-  void groupId;
+  const { t, locale } = useLocale();
   const [values, setValues] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -316,7 +326,7 @@ function QuickRateForm({
     const res = await onSubmit(values);
     setSaving(false);
     if (!res.ok) {
-      setError(res.error ?? "Something went wrong");
+      setError(res.error ?? t("common.somethingWentWrong"));
       return;
     }
     onDone();
@@ -324,11 +334,11 @@ function QuickRateForm({
 
   return (
     <Card className="space-y-2">
-      <p className="text-xs text-[var(--muted)]">Rating {playerName}</p>
-      <ParamPicker sport={sport} values={values} onChange={setValues} />
+      <p className="text-xs text-[var(--muted)]">{t("newGameday.ratingFor", { name: playerName })}</p>
+      <ParamPicker sport={sport} locale={locale} values={values} onChange={setValues} />
       {error && <p className="text-red-400 text-sm">{error}</p>}
       <Button size="sm" className="w-full" onClick={save} disabled={!ready || saving}>
-        {saving ? <Spinner /> : "Save rating"}
+        {saving ? <Spinner /> : t("rate.saveRating")}
       </Button>
     </Card>
   );

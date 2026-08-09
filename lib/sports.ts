@@ -8,6 +8,7 @@ export type SportId = "basketball" | "soccer" | "volleyball";
 export type SportParam = {
   key: string; // jsonb key in ratings.values + column-safe identifier
   label: string;
+  labelHe: string; // Hebrew label — abbr is never translated (radar spokes)
   abbr: string; // radar chart spoke label
   scaleMin: number;
   scaleMax: number;
@@ -18,9 +19,20 @@ export type SportParam = {
 export type SportConfig = {
   id: SportId;
   label: string;
+  labelHe: string;
   params: SportParam[]; // order = rating-form / radar / stats order
   hasArchetype: boolean;
 };
+
+// Locale-aware param label — every component that renders param.label should
+// use this instead, so it stays translated once useLocale() is wired in.
+export function paramLabel(param: SportParam, locale: "en" | "he"): string {
+  return locale === "he" ? param.labelHe : param.label;
+}
+
+export function sportLabel(sport: SportConfig, locale: "en" | "he"): string {
+  return locale === "he" ? sport.labelHe : sport.label;
+}
 
 export const SPORT_IDS: SportId[] = ["basketball", "soccer", "volleyball"];
 
@@ -28,46 +40,49 @@ export const SPORTS: Record<SportId, SportConfig> = {
   basketball: {
     id: "basketball",
     label: "Basketball",
+    labelHe: "כדורסל",
     hasArchetype: true,
     // No dedicated "Overall" field — kept exactly as v1: a simple mean of 8
     // equally-weighted skills. Nothing is mandatory to save a rating.
     params: [
-      { key: "shooting", label: "Shooting", abbr: "SHT", scaleMin: 1, scaleMax: 5, weight: 0.125 },
-      { key: "scoring", label: "Scoring", abbr: "SCR", scaleMin: 1, scaleMax: 5, weight: 0.125 },
-      { key: "dribbling", label: "Dribbling", abbr: "DRB", scaleMin: 1, scaleMax: 5, weight: 0.125 },
-      { key: "rebounding", label: "Rebounding", abbr: "REB", scaleMin: 1, scaleMax: 5, weight: 0.125 },
-      { key: "passing", label: "Passing", abbr: "PAS", scaleMin: 1, scaleMax: 5, weight: 0.125 },
-      { key: "defending", label: "Defending", abbr: "DEF", scaleMin: 1, scaleMax: 5, weight: 0.125 },
-      { key: "physicality", label: "Physicality", abbr: "PHY", scaleMin: 1, scaleMax: 5, weight: 0.125 },
-      { key: "athleticism", label: "Athleticism", abbr: "ATH", scaleMin: 1, scaleMax: 5, weight: 0.125 },
+      { key: "shooting", label: "Shooting", labelHe: "זריקות", abbr: "SHT", scaleMin: 1, scaleMax: 5, weight: 0.125 },
+      { key: "scoring", label: "Scoring", labelHe: "קליעה", abbr: "SCR", scaleMin: 1, scaleMax: 5, weight: 0.125 },
+      { key: "dribbling", label: "Dribbling", labelHe: "כדרור", abbr: "DRB", scaleMin: 1, scaleMax: 5, weight: 0.125 },
+      { key: "rebounding", label: "Rebounding", labelHe: "ריבאונדים", abbr: "REB", scaleMin: 1, scaleMax: 5, weight: 0.125 },
+      { key: "passing", label: "Passing", labelHe: "מסירות", abbr: "PAS", scaleMin: 1, scaleMax: 5, weight: 0.125 },
+      { key: "defending", label: "Defending", labelHe: "הגנה", abbr: "DEF", scaleMin: 1, scaleMax: 5, weight: 0.125 },
+      { key: "physicality", label: "Physicality", labelHe: "פיזיות", abbr: "PHY", scaleMin: 1, scaleMax: 5, weight: 0.125 },
+      { key: "athleticism", label: "Athleticism", labelHe: "אתלטיות", abbr: "ATH", scaleMin: 1, scaleMax: 5, weight: 0.125 },
     ],
   },
   volleyball: {
     id: "volleyball",
     label: "Volleyball",
+    labelHe: "כדורעף",
     hasArchetype: false,
     params: [
-      { key: "overall", label: "Overall", abbr: "OVR", scaleMin: 1, scaleMax: 10, weight: 0.3, isOverall: true },
-      { key: "spiking", label: "Spiking", abbr: "SPK", scaleMin: 1, scaleMax: 5, weight: 0.15 },
-      { key: "passing", label: "Passing", abbr: "PAS", scaleMin: 1, scaleMax: 5, weight: 0.15 },
-      { key: "serving", label: "Serving", abbr: "SRV", scaleMin: 1, scaleMax: 5, weight: 0.12 },
-      { key: "setting", label: "Setting", abbr: "SET", scaleMin: 1, scaleMax: 5, weight: 0.1 },
-      { key: "athleticism", label: "Athleticism", abbr: "ATH", scaleMin: 1, scaleMax: 5, weight: 0.1 },
-      { key: "blocking", label: "Blocking", abbr: "BLK", scaleMin: 1, scaleMax: 5, weight: 0.08 },
+      { key: "overall", label: "Overall", labelHe: "ציון כללי", abbr: "OVR", scaleMin: 1, scaleMax: 10, weight: 0.3, isOverall: true },
+      { key: "spiking", label: "Spiking", labelHe: "הנחתות", abbr: "SPK", scaleMin: 1, scaleMax: 5, weight: 0.15 },
+      { key: "passing", label: "Passing", labelHe: "מסירות/קבלה", abbr: "PAS", scaleMin: 1, scaleMax: 5, weight: 0.15 },
+      { key: "serving", label: "Serving", labelHe: "מכת פתיחה", abbr: "SRV", scaleMin: 1, scaleMax: 5, weight: 0.12 },
+      { key: "setting", label: "Setting", labelHe: "הרמה", abbr: "SET", scaleMin: 1, scaleMax: 5, weight: 0.1 },
+      { key: "athleticism", label: "Athleticism", labelHe: "אתלטיות", abbr: "ATH", scaleMin: 1, scaleMax: 5, weight: 0.1 },
+      { key: "blocking", label: "Blocking", labelHe: "בלוקים", abbr: "BLK", scaleMin: 1, scaleMax: 5, weight: 0.08 },
     ],
   },
   soccer: {
     id: "soccer",
     label: "Soccer",
+    labelHe: "כדורגל",
     hasArchetype: false,
     params: [
-      { key: "overall", label: "Overall", abbr: "OVR", scaleMin: 1, scaleMax: 10, weight: 0.3, isOverall: true },
-      { key: "shooting", label: "Shooting", abbr: "SHT", scaleMin: 1, scaleMax: 5, weight: 0.15 },
-      { key: "passing", label: "Passing", abbr: "PAS", scaleMin: 1, scaleMax: 5, weight: 0.15 },
-      { key: "defending", label: "Defending", abbr: "DEF", scaleMin: 1, scaleMax: 5, weight: 0.15 },
-      { key: "dribbling", label: "Dribbling", abbr: "DRB", scaleMin: 1, scaleMax: 5, weight: 0.1 },
-      { key: "pace", label: "Pace", abbr: "PAC", scaleMin: 1, scaleMax: 5, weight: 0.1 },
-      { key: "physicality", label: "Physicality", abbr: "PHY", scaleMin: 1, scaleMax: 5, weight: 0.05 },
+      { key: "overall", label: "Overall", labelHe: "ציון כללי", abbr: "OVR", scaleMin: 1, scaleMax: 10, weight: 0.3, isOverall: true },
+      { key: "shooting", label: "Shooting", labelHe: "בעיטות", abbr: "SHT", scaleMin: 1, scaleMax: 5, weight: 0.15 },
+      { key: "passing", label: "Passing", labelHe: "מסירות", abbr: "PAS", scaleMin: 1, scaleMax: 5, weight: 0.15 },
+      { key: "defending", label: "Defending", labelHe: "הגנה", abbr: "DEF", scaleMin: 1, scaleMax: 5, weight: 0.15 },
+      { key: "dribbling", label: "Dribbling", labelHe: "כדרור", abbr: "DRB", scaleMin: 1, scaleMax: 5, weight: 0.1 },
+      { key: "pace", label: "Pace", labelHe: "מהירות", abbr: "PAC", scaleMin: 1, scaleMax: 5, weight: 0.1 },
+      { key: "physicality", label: "Physicality", labelHe: "פיזיות", abbr: "PHY", scaleMin: 1, scaleMax: 5, weight: 0.05 },
     ],
   },
 };
@@ -76,6 +91,12 @@ export const SPORT_LABELS: Record<SportId, string> = {
   basketball: "Basketball",
   soccer: "Soccer",
   volleyball: "Volleyball",
+};
+
+export const SPORT_LABELS_HE: Record<SportId, string> = {
+  basketball: "כדורסל",
+  soccer: "כדורגל",
+  volleyball: "כדורעף",
 };
 
 // The param flagged isOverall, if this sport has one (basketball doesn't).

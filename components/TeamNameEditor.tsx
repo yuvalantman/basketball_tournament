@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button, Input, Spinner } from "@/components/ui";
 import { renameTeam } from "@/app/actions/gameday";
+import { useLocale } from "@/lib/i18n/LocaleContext";
 import type { Team } from "@/lib/types";
 
 // Inline team-name editor. A team member (or the gameday's manager) can
@@ -20,6 +21,7 @@ export function TeamNameEditor({
   onDone: () => void;
   className?: string;
 }) {
+  const { t } = useLocale();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(team.name);
   const [busy, setBusy] = useState(false);
@@ -53,8 +55,8 @@ export function TeamNameEditor({
           setName(team.name);
           setEditing(true);
         }}
-        className={`${className} flex items-center gap-1.5 text-left`}
-        title="Rename your team"
+        className={`${className} flex items-center gap-1.5 text-start`}
+        title={t("team.renameTitle")}
       >
         {team.name}
         <span className="text-[var(--muted)] text-sm">✎</span>
@@ -79,7 +81,7 @@ export function TeamNameEditor({
           className="py-2"
         />
         <Button size="sm" onClick={save} disabled={busy}>
-          {busy ? <Spinner /> : "Save"}
+          {busy ? <Spinner /> : t("common.save")}
         </Button>
       </div>
       {error && <p className="text-red-400 text-xs mt-1">{error}</p>}

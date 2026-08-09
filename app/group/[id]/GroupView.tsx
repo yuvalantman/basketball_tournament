@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { Badge } from "@/components/ui";
-import { SPORT_LABELS } from "@/lib/sports";
+import { SPORT_LABELS, SPORT_LABELS_HE } from "@/lib/sports";
 import type { Group, PlayerCard, Profile } from "@/lib/types";
 import type { GamedayWithStatus } from "@/lib/data";
+import { useLocale } from "@/lib/i18n/LocaleContext";
 import { PlayersTab } from "./PlayersTab";
 import { RateTab } from "./RateTab";
 import { PlayerCardsTab } from "./PlayerCardsTab";
@@ -20,43 +21,53 @@ export function GroupView(props: {
   ratedIds: string[];
   playerCards: PlayerCard[];
   gamedays: GamedayWithStatus[];
+  ratingWeights: Record<string, number>;
 }) {
-  const { group, isManager, myUserId, roster, ratedIds, playerCards, gamedays } = props;
+  const { group, isManager, myUserId, roster, ratedIds, playerCards, gamedays, ratingWeights } = props;
+  const { t, locale } = useLocale();
+  const sportLabels = locale === "he" ? SPORT_LABELS_HE : SPORT_LABELS;
   const [tab, setTab] = useState<Tab>("players");
 
   const tabs: { key: Tab; label: string }[] = [
-    { key: "players", label: "Players" },
-    { key: "rate", label: "Rate" },
-    { key: "cards", label: "Player cards" },
-    { key: "gamedays", label: "Game days" },
+    { key: "players", label: t("group.tabPlayers") },
+    { key: "rate", label: t("group.tabRate") },
+    { key: "cards", label: t("group.tabCards") },
+    { key: "gamedays", label: t("group.tabGamedays") },
   ];
 
   return (
     <div>
       <div className="flex items-center gap-2 mb-4">
         <Badge className="bg-[var(--primary)]/15 border-[var(--primary)] text-[var(--primary)]">
-          {SPORT_LABELS[group.sport]}
+          {sportLabels[group.sport]}
         </Badge>
         <span className="text-xs text-[var(--muted)]">
-          Code <span className="font-mono tracking-widest text-[var(--foreground)]">{group.code}</span>
+          {t("common.code")} <span className="font-mono tracking-widest text-[var(--foreground)]">{group.code}</span>
         </span>
       </div>
 
       <div className="flex gap-1 mb-5 bg-[var(--surface)] border border-[var(--border)] rounded-xl p-1 overflow-x-auto">
-        {tabs.map((t) => (
+        {tabs.map((tabItem) => (
           <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
+            key={tabItem.key}
+            onClick={() => setTab(tabItem.key)}
             className={`flex-1 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition ${
-              tab === t.key ? "bg-[var(--primary)] text-[var(--primary-foreground)]" : "text-[var(--muted)]"
+              tab === tabItem.key ? "bg-[var(--primary)] text-[var(--primary-foreground)]" : "text-[var(--muted)]"
             }`}
           >
-            {t.label}
+            {tabItem.label}
           </button>
         ))}
       </div>
 
-      {tab === "players" && <PlayersTab group={group} isManager={isManager} roster={roster} />}
+      {tab === "players" && (
+        <PlayersTab
+          group={group}
+          isManager={isManager}
+          roster={roster}
+          ratingWeights={ratingWeights}
+        />
+      )}
       {tab === "rate" && (
         <RateTab group={group} roster={roster} myUserId={myUserId} ratedIds={ratedIds} />
       )}

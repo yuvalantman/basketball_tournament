@@ -2,11 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Avatar, Badge, Button, Card, Spinner } from "@/components/ui";
+import { HelpTooltip } from "@/components/HelpTooltip";
 import { RadarChart } from "@/components/RadarChart";
-import { formatHeight, GENDER_LABELS } from "@/lib/constants";
-import { SPORTS, overallParam } from "@/lib/sports";
+import { formatHeight, GENDER_LABELS, GENDER_LABELS_HE } from "@/lib/constants";
+import { SPORTS, overallParam, paramLabel } from "@/lib/sports";
 import type { Group, ManagerInspection, PlayerCard } from "@/lib/types";
 import { getManagerInspection, submitManagerRating } from "@/app/actions/rating";
+import { useLocale } from "@/lib/i18n/LocaleContext";
 
 export function PlayerCardsTab({
   group,
@@ -17,14 +19,19 @@ export function PlayerCardsTab({
   isManager: boolean;
   cards: PlayerCard[];
 }) {
+  const { t } = useLocale();
   const sorted = [...cards].sort((a, b) => (b.overall ?? -1) - (a.overall ?? -1));
 
   if (sorted.length === 0) {
-    return <Card className="text-center text-[var(--muted)] py-8">No players yet.</Card>;
+    return <Card className="text-center text-[var(--muted)] py-8">{t("cards.noPlayersYet")}</Card>;
   }
 
   return (
     <div className="space-y-3">
+      <div className="flex items-center gap-1.5 px-1 -mb-1">
+        <h2 className="text-sm font-semibold text-[var(--muted)] uppercase tracking-wide">{t("cards.heading")}</h2>
+        <HelpTooltip text={t("help.cards")} />
+      </div>
       {sorted.map((c) => (
         <PlayerCardItem key={c.user_id} group={group} isManager={isManager} card={c} />
       ))}
@@ -41,6 +48,8 @@ function PlayerCardItem({
   isManager: boolean;
   card: PlayerCard;
 }) {
+  const { t, locale } = useLocale();
+  const genderLabels = locale === "he" ? GENDER_LABELS_HE : GENDER_LABELS;
   const sport = SPORTS[group.sport];
   const [inspecting, setInspecting] = useState(false);
   const prefetched = useRef<Promise<unknown> | null>(null);
@@ -57,13 +66,13 @@ function PlayerCardItem({
           <div className="font-semibold truncate">{card.display_name}</div>
           <div className="text-xs text-[var(--muted)] flex gap-2 flex-wrap">
             {card.height_cm && <span>{formatHeight(card.height_cm)}</span>}
-            {card.gender && <span>{GENDER_LABELS[card.gender]}</span>}
+            {card.gender && <span>{genderLabels[card.gender]}</span>}
           </div>
         </div>
         {card.overall != null && (
-          <div className="text-right">
+          <div className="text-end">
             <div className="text-2xl font-extrabold">{card.overall}</div>
-            <div className="text-[10px] text-[var(--muted)] uppercase tracking-wide">OVR</div>
+            <div className="text-[10px] text-[var(--muted)] uppercase tracking-wide">{t("cards.ovr")}</div>
           </div>
         )}
       </div>
@@ -81,14 +90,20 @@ function PlayerCardItem({
         <div className="flex gap-4 text-sm">
           {card.best_param && (
             <span>
-              <span className="text-[var(--muted)]">Best:</span>{" "}
-              {sport.params.find((p) => p.key === card.best_param)?.label ?? card.best_param}
+              <span className="text-[var(--muted)]">{t("cards.best")}</span>{" "}
+              {(() => {
+                const p = sport.params.find((sp) => sp.key === card.best_param);
+                return p ? paramLabel(p, locale) : card.best_param;
+              })()}
             </span>
           )}
           {card.worst_param && (
             <span>
-              <span className="text-[var(--muted)]">Needs work:</span>{" "}
-              {sport.params.find((p) => p.key === card.worst_param)?.label ?? card.worst_param}
+              <span className="text-[var(--muted)]">{t("cards.needsWork")}</span>{" "}
+              {(() => {
+                const p = sport.params.find((sp) => sp.key === card.worst_param);
+                return p ? paramLabel(p, locale) : card.worst_param;
+              })()}
             </span>
           )}
         </div>
@@ -108,7 +123,7 @@ function PlayerCardItem({
                 key={p.key}
                 className="flex items-center justify-between rounded-lg bg-[var(--surface-2)] px-3 py-1.5 text-sm"
               >
-                <span className="text-[var(--muted)]">{p.label}</span>
+                <span className="text-[var(--muted)]">{paramLabel(p, locale)}</span>
                 <span className="font-semibold">{card.averages![p.key]}</span>
               </div>
             ) : null,
@@ -117,7 +132,7 @@ function PlayerCardItem({
       )}
 
       {card.raterCount === 0 && (
-        <p className="text-xs text-[var(--muted)]">No ratings yet.</p>
+        <p className="text-xs text-[var(--muted)]">{t("cards.noRatingsYet")}</p>
       )}
 
       {isManager && (
@@ -127,7 +142,7 @@ function PlayerCardItem({
           onClick={() => setInspecting((s) => !s)}
           className="text-xs text-[var(--muted)] hover:text-[var(--primary)] self-start"
         >
-          🔍 {inspecting ? "Hide inspection" : "Inspect ratings"}
+          {inspecting ? t("cards.hideInspection") : t("cards.inspectRatings")}
         </button>
       )}
       {isManager && inspecting && (
@@ -146,6 +161,7 @@ function InspectPanel({
   userId: string;
   prefetched: Promise<unknown> | null;
 }) {
+  const { t, locale } = useLocale();
   const sport = SPORTS[group.sport];
   const [data, setData] = useState<ManagerInspection | null>(null);
   const [loading, setLoading] = useState(true);
@@ -201,26 +217,29 @@ function InspectPanel({
     <div className="border-t border-[var(--border)] pt-3 space-y-3">
       <div>
         <div className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wide mb-1.5">
-          Rated by (per attribute)
+          {t("cards.ratedByPerAttribute")}
         </div>
         <div className="grid grid-cols-2 gap-1.5 text-sm">
-          {data.perParam.map((p) => (
-            <div key={p.key} className="flex items-center justify-between rounded-lg bg-[var(--surface-2)] px-2.5 py-1.5">
-              <span className="text-[var(--muted)]">{p.label}</span>
-              <span className="font-semibold">{p.raterCount}</span>
-            </div>
-          ))}
+          {data.perParam.map((p) => {
+            const sp = sport.params.find((x) => x.key === p.key);
+            return (
+              <div key={p.key} className="flex items-center justify-between rounded-lg bg-[var(--surface-2)] px-2.5 py-1.5">
+                <span className="text-[var(--muted)]">{sp ? paramLabel(sp, locale) : p.label}</span>
+                <span className="font-semibold">{p.raterCount}</span>
+              </div>
+            );
+          })}
         </div>
       </div>
 
       <div className="space-y-2">
         <div className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wide">
-          Rate as manager (optional extra weight)
+          {t("cards.rateAsManager")}
         </div>
         {sport.params.map((param) => (
           <div key={param.key} className="flex items-center justify-between gap-3">
             <span className="text-sm w-28 shrink-0">
-              {param.label}
+              {paramLabel(param, locale)}
               {param.isOverall && <span className="text-[var(--primary)]"> *</span>}
             </span>
             <div className="flex gap-1 flex-wrap justify-end">
@@ -242,7 +261,7 @@ function InspectPanel({
         ))}
 
         <div className="flex items-center justify-between gap-3">
-          <span className="text-sm">Weight</span>
+          <span className="text-sm">{t("cards.weight")}</span>
           <div className="flex gap-1.5">
             {([1, 2, 3, 5] as const).map((w) => (
               <button
@@ -261,9 +280,9 @@ function InspectPanel({
         </div>
 
         {error && <p className="text-red-400 text-sm">{error}</p>}
-        {saved && <p className="text-green-400 text-sm">Saved!</p>}
+        {saved && <p className="text-green-400 text-sm">{t("common.saved")}</p>}
         <Button className="w-full" size="sm" onClick={save} disabled={!ready || saving}>
-          {saving ? <Spinner /> : "Save manager rating"}
+          {saving ? <Spinner /> : t("cards.saveManagerRating")}
         </Button>
       </div>
     </div>

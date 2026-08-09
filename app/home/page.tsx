@@ -4,12 +4,16 @@ import { getMyProfile } from "@/lib/data";
 import { getMyGroups, type GroupSummary } from "@/app/actions/group";
 import { Avatar, Badge, Card } from "@/components/ui";
 import { LogoutButton } from "@/components/LogoutButton";
-import { SPORT_LABELS } from "@/lib/sports";
+import { SPORT_LABELS, SPORT_LABELS_HE } from "@/lib/sports";
+import { getServerT } from "@/lib/i18n/server";
+import { pluralKey } from "@/lib/i18n";
 import { HomeActions } from "./HomeActions";
 
 export default async function HomePage() {
   const profile = await getMyProfile();
   if (!profile) redirect("/login");
+  const { t, locale } = await getServerT();
+  const sportLabels = locale === "he" ? SPORT_LABELS_HE : SPORT_LABELS;
 
   const res = await getMyGroups();
   const groups: GroupSummary[] = res.ok ? ((res.data as { groups: GroupSummary[] }).groups ?? []) : [];
@@ -30,13 +34,11 @@ export default async function HomePage() {
       <HomeActions />
 
       <h2 className="text-sm font-semibold text-[var(--muted)] mt-8 mb-3 uppercase tracking-wide">
-        Your groups
+        {t("home.yourGroups")}
       </h2>
 
       {groups.length === 0 ? (
-        <Card className="text-center text-[var(--muted)] py-8">
-          No groups yet. Create one or join with a code.
-        </Card>
+        <Card className="text-center text-[var(--muted)] py-8">{t("home.noGroupsYet")}</Card>
       ) : (
         <div className="space-y-3">
           {groups.map((g) => (
@@ -45,13 +47,17 @@ export default async function HomePage() {
                 <div>
                   <div className="font-semibold">{g.name}</div>
                   <div className="text-xs text-[var(--muted)] mt-0.5">
-                    {g.memberCount} member{g.memberCount !== 1 ? "s" : ""} · Code{" "}
+                    {g.memberCount} {t(pluralKey(g.memberCount, "home.member"))} · {t("common.code")}{" "}
                     <span className="font-mono tracking-widest">{g.code}</span>
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-1">
-                  <Badge>{SPORT_LABELS[g.sport]}</Badge>
-                  {g.isManager && <Badge className="bg-[var(--primary)]/15 border-[var(--primary)] text-[var(--primary)]">You manage this</Badge>}
+                  <Badge>{sportLabels[g.sport]}</Badge>
+                  {g.isManager && (
+                    <Badge className="bg-[var(--primary)]/15 border-[var(--primary)] text-[var(--primary)]">
+                      {t("home.youManageThis")}
+                    </Badge>
+                  )}
                 </div>
               </Card>
             </Link>

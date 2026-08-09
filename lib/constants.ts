@@ -58,3 +58,8 @@ export const GENDER_LABELS: Record<Gender, string> = {
   M: "Male",
   F: "Female",
 };
+
+export const GENDER_LABELS_HE: Record<Gender, string> = {
+  M: "זכר",
+  F: "נקבה",
+};

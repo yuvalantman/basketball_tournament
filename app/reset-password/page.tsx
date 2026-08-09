@@ -4,9 +4,11 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button, Input, Label, Spinner } from "@/components/ui";
+import { useLocale } from "@/lib/i18n/LocaleContext";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
+  const { t } = useLocale();
   const [ready, setReady] = useState(false);
   const [expired, setExpired] = useState(false);
   const [password, setPassword] = useState("");
@@ -47,11 +49,11 @@ export default function ResetPasswordPage() {
     e.preventDefault();
     setError(null);
     if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
+      setError(t("auth.passwordTooShort"));
       return;
     }
     if (password !== confirm) {
-      setError("Passwords don't match.");
+      setError(t("auth.passwordsDontMatch"));
       return;
     }
     setSaving(true);
@@ -72,19 +74,18 @@ export default function ResetPasswordPage() {
   return (
     <main className="min-h-dvh flex flex-col justify-center px-6 max-w-md mx-auto w-full">
       <div className="mb-8 text-center">
-        <h1 className="text-2xl font-extrabold tracking-tight">Set a new password</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight">{t("auth.setNewPassword")}</h1>
       </div>
 
       {expired && !ready ? (
         <p className="text-center text-[var(--muted)]">
-          This reset link is invalid or has expired. Request a new one from the{" "}
+          {t("auth.resetLinkExpired")}{" "}
           <a href="/forgot-password" className="text-[var(--primary)] font-semibold">
-            forgot password
-          </a>{" "}
-          page.
+            {t("auth.forgotPasswordLink")}
+          </a>
         </p>
       ) : done ? (
-        <p className="text-center text-green-400">Password updated — taking you home…</p>
+        <p className="text-center text-green-400">{t("auth.passwordUpdated")}</p>
       ) : !ready ? (
         <div className="flex justify-center py-6">
           <Spinner />
@@ -92,19 +93,19 @@ export default function ResetPasswordPage() {
       ) : (
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
-            <Label htmlFor="password">New password</Label>
+            <Label htmlFor="password">{t("auth.newPassword")}</Label>
             <Input
               id="password"
               type="password"
               autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="at least 6 characters"
+              placeholder={t("auth.passwordHint")}
               required
             />
           </div>
           <div>
-            <Label htmlFor="confirm">Confirm password</Label>
+            <Label htmlFor="confirm">{t("auth.confirmPassword")}</Label>
             <Input
               id="confirm"
               type="password"
@@ -118,7 +119,7 @@ export default function ResetPasswordPage() {
           {error && <p className="text-red-400 text-sm">{error}</p>}
 
           <Button type="submit" size="lg" className="w-full" disabled={saving}>
-            {saving ? <Spinner /> : "Save new password"}
+            {saving ? <Spinner /> : t("auth.saveNewPassword")}
           </Button>
         </form>
       )}

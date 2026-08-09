@@ -26,6 +26,28 @@ async function requireGamedayCreator(gamedayId: string): Promise<{ uid: string; 
   return { uid, groupId: data.group_id };
 }
 
+// Defense in depth: confirms every id in `userIds` is actually a member of
+// `groupId` before letting a gameday reference them as a participant/
+// waitlist entry. Server actions are directly callable, not just from this
+// app's own UI (which only ever offers the group's own roster) — without
+// this, a caller could pass an arbitrary profile id.
+async function requireGroupMembers(
+  admin: ReturnType<typeof createAdminClient>,
+  groupId: string,
+  userIds: string[],
+): Promise<void> {
+  if (userIds.length === 0) return;
+  const { data } = await admin
+    .from("group_players")
+    .select("user_id")
+    .eq("group_id", groupId)
+    .in("user_id", userIds);
+  const found = new Set((data ?? []).map((r) => r.user_id));
+  if (userIds.some((id) => !found.has(id))) {
+    throw new Error("One of those players isn't a member of this group.");
+  }
+}
+
 // --- create / roster ---------------------------------------------------------
 
 export async function createGameday(
@@ -51,6 +73,7 @@ export async function createGameday(
 
     const userIds = new Set(input.initialUserIds);
     userIds.add(uid); // creator is always in their own gameday by default
+    await requireGroupMembers(admin, groupId, Array.from(userIds));
     const participants = Array.from(userIds).map((userId) => ({
       gameday_id: gameday.id,
       kind: "member" as const,
@@ -118,6 +141,7 @@ export async function addParticipant(gamedayId: string, userId: string): Promise
   try {
     const { groupId } = await requireGamedayManager(gamedayId);
     const admin = createAdminClient();
+    await requireGroupMembers(admin, groupId, [userId]);
     await admin
       .from("gameday_participants")
       .upsert(
@@ -241,6 +265,7 @@ export async function addToWaitlist(gamedayId: string, userId: string): Promise<
   try {
     const { groupId } = await requireGamedayManager(gamedayId);
     const admin = createAdminClient();
+    await requireGroupMembers(admin, groupId, [userId]);
     await admin
       .from("gameday_waitlist")
       .upsert({ gameday_id: gamedayId, user_id: userId }, { onConflict: "gameday_id,user_id" });
@@ -275,7 +300,7 @@ export async function quickRateFromGameday(
   values: Record<string, number>,
 ): Promise<ActionResult> {
   const groupId = await getGamedayGroupId(gamedayId);
-  return upsertRating(groupId, rateeId, values);
+  return upsertRating(groupId, rateeId, values, { ignoreGrantedWeight: true });
 }
 
 // --- restrictions (gameday-scoped) ------------------------------------------
@@ -328,52 +353,55 @@ const TEAM_NAMES = [
 async function runGeneration(gamedayId: string, seed: number): Promise<ActionResult> {
   const admin = createAdminClient();
 
-  const { data: gameday } = await admin
-    .from("gamedays")
-    .select("group_id, team_size, groups(sport)")
-    .eq("id", gamedayId)
-    .single();
+  // Wave 1: gameday/participants/restrictions only depend on gamedayId, not
+  // on each other's results — fire together instead of 3 sequential trips.
+  const [{ data: gameday }, { data: participants }, { data: restrictionRows }] = await Promise.all([
+    admin.from("gamedays").select("group_id, team_size, groups(sport)").eq("id", gamedayId).single(),
+    admin.from("gameday_participants").select("kind, participant_id, added_at").eq("gameday_id", gamedayId),
+    admin.from("gameday_restrictions").select("a_id, b_id").eq("gameday_id", gamedayId).eq("kind", "apart"),
+  ]);
   if (!gameday) throw new Error("Gameday not found");
   const groupId = gameday.group_id as string;
   const sport = ((gameday.groups as unknown as { sport: SportId } | null)?.sport ?? "basketball") as SportId;
   const sportConfig = SPORTS[sport];
 
-  const { data: participants } = await admin
-    .from("gameday_participants")
-    .select("kind, participant_id, added_at")
-    .eq("gameday_id", gamedayId);
   const memberIds = (participants ?? []).filter((p) => p.kind === "member").map((p) => p.participant_id);
   const guestIds = (participants ?? []).filter((p) => p.kind === "guest").map((p) => p.participant_id);
   const addedAtById = new Map((participants ?? []).map((p) => [p.participant_id, p.added_at as string]));
   const kindById = new Map((participants ?? []).map((p) => [p.participant_id, p.kind as ParticipantKind]));
+  const restrictions = (restrictionRows ?? []).map((r) => [r.a_id, r.b_id] as [string, string]);
 
   if (memberIds.length + guestIds.length < 2) {
     return { ok: false, error: "Need at least 2 players in this gameday." };
   }
 
-  const { data: memberProfiles } = memberIds.length
-    ? await admin.from("profiles").select("id, height_cm, gender").in("id", memberIds)
-    : { data: [] as { id: string; height_cm: number | null; gender: "M" | "F" | null }[] };
-  const { data: guestProfiles } = guestIds.length
-    ? await admin.from("gameday_guests").select("id, height_cm, gender").in("id", guestIds)
-    : { data: [] as { id: string; height_cm: number | null; gender: "M" | "F" | null }[] };
+  // Wave 2: member/guest profiles and their ratings, all independent of one
+  // another once memberIds/guestIds are known.
+  const [{ data: memberProfiles }, { data: guestProfiles }, { data: memberRatings }, { data: guestRatings }] =
+    await Promise.all([
+      memberIds.length
+        ? admin.from("profiles").select("id, height_cm, gender").in("id", memberIds)
+        : Promise.resolve({ data: [] as { id: string; height_cm: number | null; gender: "M" | "F" | null }[] }),
+      guestIds.length
+        ? admin.from("gameday_guests").select("id, height_cm, gender").in("id", guestIds)
+        : Promise.resolve({ data: [] as { id: string; height_cm: number | null; gender: "M" | "F" | null }[] }),
+      // Ratings: real group ratings for members, the single guest rating for
+      // guests — fed into the SAME aggregation call since it only cares about
+      // (rater_id, ratee_id, values, weight), not whether an id is a profile
+      // or a guest. This is what keeps balancing fully polymorphic with no
+      // member/guest branching in the math itself.
+      memberIds.length
+        ? admin.from("ratings").select("rater_id, ratee_id, values, weight").eq("group_id", groupId).in("ratee_id", memberIds)
+        : Promise.resolve({ data: [] as RatingRow[] }),
+      guestIds.length
+        ? admin.from("gameday_guest_ratings").select("guest_id, rated_by, values").in("guest_id", guestIds)
+        : Promise.resolve({ data: [] as { guest_id: string; rated_by: string; values: Record<string, number> }[] }),
+    ]);
 
   const players = [
     ...(memberProfiles ?? []).map((p) => ({ id: p.id, height_cm: p.height_cm, gender: p.gender })),
     ...(guestProfiles ?? []).map((p) => ({ id: p.id, height_cm: p.height_cm, gender: p.gender })),
   ];
-
-  // Ratings: real group ratings for members, the single guest rating for
-  // guests — fed into the SAME aggregation call since it only cares about
-  // (rater_id, ratee_id, values, weight), not whether an id is a profile or
-  // a guest. This is what keeps balancing fully polymorphic with no
-  // member/guest branching in the math itself.
-  const { data: memberRatings } = memberIds.length
-    ? await admin.from("ratings").select("rater_id, ratee_id, values, weight").eq("group_id", groupId).in("ratee_id", memberIds)
-    : { data: [] as RatingRow[] };
-  const { data: guestRatings } = guestIds.length
-    ? await admin.from("gameday_guest_ratings").select("guest_id, rated_by, values").in("guest_id", guestIds)
-    : { data: [] as { guest_id: string; rated_by: string; values: Record<string, number> }[] };
 
   const combinedRows: RatingRow[] = [
     ...((memberRatings ?? []) as RatingRow[]),
@@ -388,29 +416,28 @@ async function runGeneration(gamedayId: string, seed: number): Promise<ActionRes
   const aggregates = aggregateRatings(combinedRows, sportConfig);
   const vectors = buildFeatureVectors(players, aggregates, sportConfig);
 
-  const { data: restrictionRows } = await admin
-    .from("gameday_restrictions")
-    .select("a_id, b_id")
-    .eq("gameday_id", gamedayId)
-    .eq("kind", "apart");
-  const restrictions = (restrictionRows ?? []).map((r) => [r.a_id, r.b_id] as [string, string]);
-
   const { numTeams, sizes } = gamedayTeamSizes(players.length, gameday.team_size as number);
   const result = balanceTeams(vectors, gameday.team_size as number, restrictions, seed, sizes);
 
-  // Persist: wipe old teams (cascade removes members) then insert fresh.
+  // Persist: wipe old teams (cascade removes members), then bulk-insert all
+  // teams in one round trip, then all team_members in one more — regardless
+  // of team count, instead of 2 round trips PER team.
   await admin.from("teams").delete().eq("gameday_id", gamedayId);
 
-  for (let i = 0; i < result.teams.length; i++) {
-    const { data: team } = await admin
-      .from("teams")
-      .insert({ gameday_id: gamedayId, name: TEAM_NAMES[i] ?? `Team ${i + 1}`, seed: i + 1 })
-      .select("id")
-      .single();
-    if (!team) continue;
+  const teamRows = result.teams.map((_, i) => ({
+    gameday_id: gamedayId,
+    name: TEAM_NAMES[i] ?? `Team ${i + 1}`,
+    seed: i + 1,
+  }));
+  const { data: insertedTeams } = await admin.from("teams").insert(teamRows).select("id, seed");
+  // Match by `seed` rather than trusting the returned rows to be in insert
+  // order (Postgres/PostgREST don't guarantee that for a multi-row INSERT).
+  const teamIdBySeed = new Map((insertedTeams ?? []).map((t) => [t.seed, t.id]));
+  const targetSize = gameday.team_size as number;
 
-    const roster = result.teams[i];
-    const targetSize = gameday.team_size as number;
+  const allMembers = result.teams.flatMap((roster, i) => {
+    const teamId = teamIdBySeed.get(i + 1);
+    if (!teamId) return [];
     const extra = Math.max(0, roster.length - targetSize);
     // Reserve labeling is cosmetic only (doesn't affect balance math, which
     // already ran above): the most-recently-added players in an over-quota
@@ -420,14 +447,14 @@ async function runGeneration(gamedayId: string, seed: number): Promise<ActionRes
       .sort((a, b) => (addedAtById.get(b) ?? "").localeCompare(addedAtById.get(a) ?? ""));
     const reserveIds = new Set(sortedByRecency.slice(0, extra));
 
-    const members = roster.map((participantId) => ({
-      team_id: team.id,
+    return roster.map((participantId) => ({
+      team_id: teamId,
       kind: kindById.get(participantId) ?? "member",
       participant_id: participantId,
       is_reserve: reserveIds.has(participantId),
     }));
-    if (members.length) await admin.from("team_members").insert(members);
-  }
+  });
+  if (allMembers.length) await admin.from("team_members").insert(allMembers);
 
   return {
     ok: true,
