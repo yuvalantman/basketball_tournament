@@ -74,12 +74,20 @@ function GamedayRow({ group, gameday }: { group: Group; gameday: GamedayWithStat
               · {t("gamedays.byCreator", { name: gameday.creatorName })}
             </div>
           </div>
-          <Badge>{gameday.participantCount} {t(pluralKey(gameday.participantCount, "gamedays.playerCount"))}</Badge>
+          <Badge>
+            {gameday.max_players != null
+              ? t("gamedays.maxPlayersCount", { count: gameday.participantCount, max: gameday.max_players })
+              : `${gameday.participantCount} ${t(pluralKey(gameday.participantCount, "gamedays.playerCount"))}`}
+          </Badge>
         </div>
 
         <div className="flex items-center justify-between">
           <StatusBadge status={status} />
-          {status.kind === "none" || status.kind === "waitlisted" ? (
+          {/* Gamedays with self-join enabled show their real Join button on
+              the detail page (with the full atomic-capacity + waitlist-popup
+              handling) — this quick action stays waitlist-only, exactly as
+              before, only for gamedays that don't have a cap set. */}
+          {gameday.max_players == null && (status.kind === "none" || status.kind === "waitlisted") ? (
             <Button
               size="sm"
               variant="secondary"

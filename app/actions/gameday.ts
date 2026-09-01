@@ -52,7 +52,13 @@ async function requireGroupMembers(
 
 export async function createGameday(
   groupId: string,
-  input: { name: string; date: string; teamSize: number; initialUserIds: string[] },
+  input: {
+    name: string;
+    date: string;
+    teamSize: number;
+    initialUserIds: string[];
+    maxPlayers?: number | null;
+  },
 ): Promise<ActionResult> {
   try {
     const uid = await requireGroupMember(groupId);
@@ -66,13 +72,17 @@ export async function createGameday(
         name: input.name.trim() || "Gameday",
         date: input.date,
         team_size: input.teamSize,
+        max_players: input.maxPlayers ?? null,
       })
       .select("id")
       .single();
     if (error || !gameday) throw new Error(error?.message);
 
+    // NOT auto-adding the creator here on purpose — the creator can choose
+    // not to play in their own gameday. NewGamedayForm defaults them into
+    // the selection and confirms before submit if they've deselected
+    // themselves, but whatever the client actually sends is respected.
     const userIds = new Set(input.initialUserIds);
-    userIds.add(uid); // creator is always in their own gameday by default
     await requireGroupMembers(admin, groupId, Array.from(userIds));
     const participants = Array.from(userIds).map((userId) => ({
       gameday_id: gameday.id,
@@ -256,6 +266,54 @@ export async function leaveWaitlist(gamedayId: string): Promise<ActionResult> {
     await admin.from("gameday_waitlist").delete().eq("gameday_id", gamedayId).eq("user_id", uid);
     revalidatePath(`/group/${groupId}/gameday/${gamedayId}`);
     return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+// --- self-service join (opt-in per gameday via max_players) -----------------
+
+// Only enabled when the gameday's manager set a max_players cap at creation.
+// Atomicity — never overbooking even when two people click Join at nearly
+// the same instant — is handled entirely inside the join_gameday() Postgres
+// function (see supabase/migrations/0007_gameday_self_join.sql), which locks
+// the gameday's own row for the transaction. This action just authorizes
+// the caller and relays the function's result; it does no capacity logic of
+// its own on purpose (a second, separate "count then insert" here would
+// reintroduce exactly the race the DB function exists to prevent).
+export async function joinGameday(gamedayId: string): Promise<ActionResult> {
+  try {
+    const groupId = await getGamedayGroupId(gamedayId);
+    const uid = await requireGroupMember(groupId);
+    const admin = createAdminClient();
+    const { data, error } = await admin.rpc("join_gameday", {
+      p_gameday_id: gamedayId,
+      p_user_id: uid,
+    });
+    if (error) throw new Error(error.message);
+    revalidatePath(`/group/${groupId}/gameday/${gamedayId}`);
+    return { ok: true, data };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+// Self-service leave for gamedays with self-join enabled — mirrors
+// removeParticipant (vacate a team slot if any, promote the waitlist head
+// into it), done atomically in leave_gameday() for the same reason
+// join_gameday() is atomic.
+export async function leaveGamedaySelf(gamedayId: string): Promise<ActionResult> {
+  try {
+    const groupId = await getGamedayGroupId(gamedayId);
+    const uid = await requireGroupMember(groupId);
+    const admin = createAdminClient();
+    const { data, error } = await admin.rpc("leave_gameday", {
+      p_gameday_id: gamedayId,
+      p_user_id: uid,
+    });
+    if (error) throw new Error(error.message);
+    revalidatePath(`/group/${groupId}/gameday/${gamedayId}`);
+    return { ok: true, data };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }

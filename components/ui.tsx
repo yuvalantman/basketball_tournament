@@ -10,7 +10,7 @@ export function Button({
   size = "md",
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "primary" | "secondary" | "ghost" | "danger";
+  variant?: "primary" | "secondary" | "ghost" | "danger" | "success";
   size?: "sm" | "md" | "lg";
 }) {
   const variants = {
@@ -18,6 +18,7 @@ export function Button({
     secondary: "bg-[var(--surface-2)] text-[var(--foreground)] hover:bg-[var(--border)] border border-[var(--border)]",
     ghost: "bg-transparent text-[var(--muted)] hover:text-[var(--foreground)]",
     danger: "bg-red-600 text-white hover:bg-red-500 font-semibold",
+    success: "bg-green-600 text-white hover:bg-green-500 font-semibold",
   };
   const sizes = {
     sm: "px-3 py-1.5 text-sm rounded-lg",

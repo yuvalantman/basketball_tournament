@@ -1,4 +1,4 @@
-import type { Gender } from "./constants";
+import type { DisplayOptions, Gender } from "./constants";
 import type { SportId } from "./sports";
 
 export type Profile = {
@@ -19,13 +19,7 @@ export type Group = {
   name: string;
   sport: SportId;
   creator_id: string;
-  display_options: {
-    averages: boolean;
-    radar: boolean;
-    overall: boolean;
-    best_worst: boolean;
-    archetype: boolean;
-  };
+  display_options: DisplayOptions;
   created_at: string;
 };
 
@@ -58,6 +52,8 @@ export type Gameday = {
   name: string;
   date: string; // YYYY-MM-DD
   team_size: number;
+  // Opt-in self-join cap (null = manager-only add, the original flow).
+  max_players: number | null;
   created_at: string;
 };
 

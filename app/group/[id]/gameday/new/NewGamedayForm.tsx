@@ -39,6 +39,7 @@ export function NewGamedayForm({
   const [name, setName] = useState(t("newGameday.defaultName"));
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [teamSize, setTeamSize] = useState(5);
+  const [maxPlayers, setMaxPlayers] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set([myUserId]));
   const [guests, setGuests] = useState<StagedGuest[]>([]);
   const [addingGuest, setAddingGuest] = useState(false);
@@ -56,8 +57,15 @@ export function NewGamedayForm({
   }
 
   const selectedMissing = roster.filter((p) => selected.has(p.id) && missingByUserId[p.id]);
+  const maxPlayersNum = maxPlayers.trim() ? Number(maxPlayers) : null;
+  // With a max-players cap set, the creator can start the gameday empty and
+  // let people self-join afterward — without a cap, self-join isn't
+  // possible, so the old "at least 2 to start" minimum still applies exactly
+  // as before.
+  const canSubmit = maxPlayersNum != null || selected.size + guests.length >= 2;
 
   async function submit() {
+    if (!selected.has(myUserId) && !confirm(t("newGameday.confirmNotJoining"))) return;
     setBusy(true);
     setError(null);
     const res = await createGameday(groupId, {
@@ -65,6 +73,7 @@ export function NewGamedayForm({
       date,
       teamSize,
       initialUserIds: Array.from(selected),
+      maxPlayers: maxPlayersNum,
     });
     if (!res.ok) {
       setError(res.error);
@@ -102,6 +111,20 @@ export function NewGamedayForm({
             onChange={(e) => setTeamSize(Number(e.target.value))}
           />
         </div>
+      </div>
+
+      <div>
+        <Label className="flex items-center gap-1.5">
+          {t("newGameday.maxPlayers")}
+          <HelpTooltip text={t("newGameday.maxPlayersHint")} />
+        </Label>
+        <Input
+          type="number"
+          min={2}
+          value={maxPlayers}
+          onChange={(e) => setMaxPlayers(e.target.value)}
+          placeholder="—"
+        />
       </div>
 
       {selectedMissing.length > 0 && (
@@ -195,7 +218,7 @@ export function NewGamedayForm({
       </div>
 
       {error && <p className="text-red-400 text-sm">{error}</p>}
-      <Button className="w-full" size="lg" onClick={submit} disabled={busy || selected.size + guests.length < 2}>
+      <Button className="w-full" size="lg" onClick={submit} disabled={busy || !canSubmit}>
         {busy ? <Spinner /> : t("newGameday.createGameday")}
       </Button>
     </div>

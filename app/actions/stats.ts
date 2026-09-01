@@ -117,3 +117,79 @@ export async function getMissingRatingsBanner(
   }
   return { items };
 }
+
+export type TeamStrength = { teamId: string; averageScore: number | null; playerCount: number };
+
+// "Group strength": each of a gameday's generated teams' average score
+// (70-100 scale), reusing the exact same aggregation
+// app/actions/gameday.ts's runGeneration already does for balancing. This
+// function computes the FULL result for any group member — the caller
+// (GamedayView, via the page that fetches this) decides whether to actually
+// render it, based on isManager or the group's display_options.group_strength
+// toggle. Never exposes who rated what — only the aggregate.
+export async function getGamedayTeamStrength(gamedayId: string): Promise<TeamStrength[] | null> {
+  const uid = await getCurrentUserId();
+  if (!uid) return null;
+  const admin = createAdminClient();
+
+  const { data: gameday } = await admin
+    .from("gamedays")
+    .select("group_id, groups(sport)")
+    .eq("id", gamedayId)
+    .single();
+  if (!gameday) return null;
+  const groupId = gameday.group_id as string;
+  const sport = SPORTS[((gameday.groups as unknown as { sport: SportId } | null)?.sport ?? "basketball") as SportId];
+
+  const { data: membership } = await admin
+    .from("group_players")
+    .select("user_id")
+    .eq("group_id", groupId)
+    .eq("user_id", uid)
+    .maybeSingle();
+  if (!membership) return null;
+
+  const { data: teams } = await admin.from("teams").select("id").eq("gameday_id", gamedayId);
+  const teamIds = (teams ?? []).map((t) => t.id);
+  if (teamIds.length === 0) return [];
+
+  const { data: memberRows } = await admin
+    .from("team_members")
+    .select("team_id, kind, participant_id")
+    .in("team_id", teamIds);
+
+  const memberIds = (memberRows ?? []).filter((m) => m.kind === "member").map((m) => m.participant_id);
+  const guestIds = (memberRows ?? []).filter((m) => m.kind === "guest").map((m) => m.participant_id);
+
+  const [{ data: memberRatings }, { data: guestRatings }] = await Promise.all([
+    memberIds.length
+      ? admin.from("ratings").select("rater_id, ratee_id, values, weight").eq("group_id", groupId).in("ratee_id", memberIds)
+      : Promise.resolve({ data: [] as RatingRow[] }),
+    guestIds.length
+      ? admin.from("gameday_guest_ratings").select("guest_id, rated_by, values").in("guest_id", guestIds)
+      : Promise.resolve({ data: [] as { guest_id: string; rated_by: string; values: Record<string, number> }[] }),
+  ]);
+
+  const combinedRows: RatingRow[] = [
+    ...((memberRatings ?? []) as RatingRow[]),
+    ...(guestRatings ?? []).map((g) => ({
+      rater_id: g.rated_by,
+      ratee_id: g.guest_id,
+      values: g.values,
+      weight: 1,
+    })),
+  ];
+  const aggregates = aggregateRatings(combinedRows, sport);
+
+  return teamIds.map((teamId) => {
+    const ids = (memberRows ?? []).filter((m) => m.team_id === teamId).map((m) => m.participant_id);
+    const scores = ids
+      .map((id) => aggregates.get(id)?.score01)
+      .filter((s): s is number => s != null);
+    return {
+      teamId,
+      averageScore: scores.length ? scoreToDisplay(scores.reduce((a, b) => a + b, 0) / scores.length) : null,
+      playerCount: ids.length,
+    };
+  });
+}

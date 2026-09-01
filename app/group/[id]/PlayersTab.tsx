@@ -24,6 +24,7 @@ const DISPLAY_KEYS: { key: keyof DisplayOptions; tKey: TranslationKey }[] = [
   { key: "radar", tKey: "players.displayRadar" },
   { key: "best_worst", tKey: "players.displayBestWorst" },
   { key: "archetype", tKey: "players.displayArchetype" },
+  { key: "group_strength", tKey: "players.displayGroupStrength" },
 ];
 
 export function PlayersTab({

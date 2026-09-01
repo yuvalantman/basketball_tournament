@@ -4,11 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Avatar, Badge, Button, Card, Input, Spinner } from "@/components/ui";
 import { HelpTooltip } from "@/components/HelpTooltip";
+import { Modal } from "@/components/Modal";
 import { TeamNameEditor } from "@/components/TeamNameEditor";
 import { formatHeight } from "@/lib/constants";
 import { SPORTS, overallParam, paramLabel, type SportId } from "@/lib/sports";
 import type { Group, Participant, Profile, Team } from "@/lib/types";
 import type { GamedayDetail } from "@/lib/data";
+import type { TeamStrength } from "@/app/actions/stats";
 import { useLocale } from "@/lib/i18n/LocaleContext";
 import {
   addGuest,
@@ -18,7 +20,9 @@ import {
   assignGamedayParticipant,
   deleteGameday,
   generateGamedayTeams,
+  joinGameday,
   joinWaitlist,
+  leaveGamedaySelf,
   leaveWaitlist,
   removeFromGamedayTeam,
   removeFromWaitlist,
@@ -47,12 +51,16 @@ export function GamedayView({
   roster,
   myUserId,
   isManager,
+  teamStrength,
 }: {
   group: Group;
   detail: GamedayDetail;
   roster: Profile[];
   myUserId: string;
   isManager: boolean;
+  // null = not allowed to see it (not a manager, and the group hasn't
+  // turned display_options.group_strength on); [] = allowed but no teams yet.
+  teamStrength: TeamStrength[] | null;
 }) {
   const router = useRouter();
   const { t, locale } = useLocale();
@@ -62,6 +70,7 @@ export function GamedayView({
   const [swapMode, setSwapMode] = useState(false);
   const [addingGuest, setAddingGuest] = useState(false);
   const [addingRestriction, setAddingRestriction] = useState(false);
+  const [waitlistPopupPosition, setWaitlistPopupPosition] = useState<number | null>(null);
 
   async function run(fn: () => Promise<{ ok: boolean; error?: string }>) {
     setBusy(true);
@@ -70,6 +79,25 @@ export function GamedayView({
     if (!res.ok) setError(res.error ?? t("common.somethingWentWrong"));
     else router.refresh();
     setBusy(false);
+  }
+
+  // Self-join: atomicity/capacity enforcement is entirely server-side (see
+  // join_gameday() in supabase/migrations/0007_gameday_self_join.sql) — this
+  // just relays whatever the server decided. status: 'joined' needs no
+  // special handling (plain refresh); 'waitlisted' pops the modal with the
+  // real position; 'already_in'/'already_waitlisted' are idempotent no-ops.
+  async function handleJoin() {
+    setBusy(true);
+    setError(null);
+    const res = await joinGameday(gameday.id);
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.error ?? t("common.somethingWentWrong"));
+      return;
+    }
+    const data = res.data as { status: string; position?: number };
+    if (data.status === "waitlisted") setWaitlistPopupPosition(data.position ?? null);
+    router.refresh();
   }
 
   const assignedRefs = new Set(teams.flatMap((tm) => (tm.members ?? []).map((m) => `${m.kind}:${m.id}`)));
@@ -108,20 +136,70 @@ export function GamedayView({
         )}
       </Card>
 
-      {!iAmParticipant && !myWaitlistEntry && (
-        <Button
-          variant="secondary"
-          className="w-full"
-          disabled={busy}
-          onClick={() => run(() => joinWaitlist(gameday.id))}
-        >
-          {t("gamedayView.joinWaitlist")}
-        </Button>
+      {gameday.max_players != null ? (
+        <>
+          {!iAmParticipant && !myWaitlistEntry && (
+            <Button
+              variant="success"
+              size="lg"
+              className="w-full"
+              disabled={busy}
+              onClick={handleJoin}
+            >
+              {busy ? <Spinner /> : t("gamedayView.join")}
+            </Button>
+          )}
+          {iAmParticipant && (
+            <Button
+              variant="secondary"
+              className="w-full"
+              disabled={busy}
+              onClick={() => run(() => leaveGamedaySelf(gameday.id))}
+            >
+              {t("gamedayView.leave")}
+            </Button>
+          )}
+          {myWaitlistEntry && (
+            <Button
+              variant="secondary"
+              className="w-full"
+              disabled={busy}
+              onClick={() => run(() => leaveGamedaySelf(gameday.id))}
+            >
+              {t("gamedayView.leaveWaitlistWithPosition", { n: myWaitlistEntry.position })}
+            </Button>
+          )}
+        </>
+      ) : (
+        <>
+          {/* No cap set on this gameday — unchanged from before self-join
+              existed: self-service is waitlist-only, direct participation
+              still requires a manager. */}
+          {!iAmParticipant && !myWaitlistEntry && (
+            <Button
+              variant="secondary"
+              className="w-full"
+              disabled={busy}
+              onClick={() => run(() => joinWaitlist(gameday.id))}
+            >
+              {t("gamedayView.joinWaitlist")}
+            </Button>
+          )}
+          {myWaitlistEntry && (
+            <Button variant="secondary" className="w-full" disabled={busy} onClick={() => run(() => leaveWaitlist(gameday.id))}>
+              {t("gamedayView.leaveWaitlistWithPosition", { n: myWaitlistEntry.position })}
+            </Button>
+          )}
+        </>
       )}
-      {myWaitlistEntry && (
-        <Button variant="secondary" className="w-full" disabled={busy} onClick={() => run(() => leaveWaitlist(gameday.id))}>
-          {t("gamedayView.leaveWaitlistWithPosition", { n: myWaitlistEntry.position })}
-        </Button>
+
+      {waitlistPopupPosition != null && (
+        <Modal onClose={() => setWaitlistPopupPosition(null)}>
+          <p className="font-semibold mb-1 pe-4">{t("gamedayView.gamedayFullTitle")}</p>
+          <p className="text-sm text-[var(--muted)] pe-4">
+            {t("gamedayView.waitlistedWithPosition", { position: waitlistPopupPosition })}
+          </p>
+        </Modal>
       )}
 
       {isManager && (
@@ -149,6 +227,7 @@ export function GamedayView({
           gamedayId={gameday.id}
           myUserId={myUserId}
           isManager={isManager}
+          teamStrength={teamStrength}
           onChanged={() => router.refresh()}
         />
       )}
@@ -289,12 +368,14 @@ function TeamsDisplay({
   gamedayId,
   myUserId,
   isManager,
+  teamStrength,
   onChanged,
 }: {
   teams: Team[];
   gamedayId: string;
   myUserId: string;
   isManager: boolean;
+  teamStrength: TeamStrength[] | null;
   onChanged: () => void;
 }) {
   const { t } = useLocale();
@@ -302,11 +383,19 @@ function TeamsDisplay({
     <div className="space-y-3">
       {teams.map((tm) => {
         const canEdit = isManager || (tm.members ?? []).some((m) => m.kind === "member" && m.id === myUserId);
+        const strength = teamStrength?.find((s) => s.teamId === tm.id);
         return (
           <Card key={tm.id} className="space-y-2">
             <div className="flex items-center justify-between gap-2">
               <TeamNameEditor gamedayId={gamedayId} team={tm} canEdit={canEdit} onDone={onChanged} />
-              <Badge>{t("gamedayView.playersCountBadge", { n: (tm.members ?? []).length })}</Badge>
+              <div className="flex items-center gap-2 shrink-0">
+                {strength?.averageScore != null && (
+                  <span className="text-xs text-[var(--muted)]">
+                    {t("gamedayView.averageScore", { score: strength.averageScore })}
+                  </span>
+                )}
+                <Badge>{t("gamedayView.playersCountBadge", { n: (tm.members ?? []).length })}</Badge>
+              </div>
             </div>
             <div className="space-y-1.5">
               {(tm.members ?? []).map((m) => (

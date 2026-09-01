@@ -9,6 +9,12 @@ export type DisplayOptions = {
   overall: boolean;
   best_worst: boolean;
   archetype: boolean;
+  // Managers always see each gameday team's average strength once teams are
+  // generated — this toggle is only about whether REGULAR members also see
+  // it. Stored in the same JSONB as the rest, so existing groups saved
+  // before this option existed simply have it undefined, read as "off"
+  // wherever it's consumed (?? false) — no backfill migration needed.
+  group_strength: boolean;
 };
 
 export const DEFAULT_DISPLAY_OPTIONS: DisplayOptions = {
@@ -17,15 +23,16 @@ export const DEFAULT_DISPLAY_OPTIONS: DisplayOptions = {
   overall: true,
   best_worst: false,
   archetype: false,
+  group_strength: false,
 };
 
 // Quick presets for the group owner's settings panel. Purely a UI
 // convenience — clicking one just sets the same independent toggles above,
 // there's no stored "which preset is active" concept.
 export const DISPLAY_PRESETS: Record<string, DisplayOptions> = {
-  nothing: { averages: false, radar: false, overall: false, best_worst: false, archetype: false },
-  overallOnly: { averages: false, radar: false, overall: true, best_worst: false, archetype: false },
-  full: { averages: true, radar: true, overall: true, best_worst: true, archetype: true },
+  nothing: { averages: false, radar: false, overall: false, best_worst: false, archetype: false, group_strength: false },
+  overallOnly: { averages: false, radar: false, overall: true, best_worst: false, archetype: false, group_strength: false },
+  full: { averages: true, radar: true, overall: true, best_worst: true, archetype: true, group_strength: true },
 };
 
 export const GAMEDAY_TEAM_SIZE_MIN = 2;
