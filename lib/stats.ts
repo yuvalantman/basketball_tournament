@@ -106,6 +106,21 @@ export type BalanceablePlayer = {
 // so they're comparable. Height/gender are soft-balanced (spread evenly
 // across team means) at reduced weight, same treatment as v1's height-only
 // dimension.
+//
+// The optimizer (lib/balancing.ts) treats every feature-vector dimension as
+// equally important by default — it just minimizes variance summed across
+// all of them. Left alone, that means "overall" is just one dimension among
+// many (8 skills + overall + height + gender for basketball), so the
+// combined pull of all the individual skills could outweigh keeping overall
+// itself tight. Overall is what players actually see as team strength, so it
+// needs to dominate — but per-skill balance still matters too (so you don't
+// get e.g. one team averaging 92 in spiking and another 80, even if their
+// overalls match). The fix follows the exact same trick already used for
+// height/gender below: pre-scale the feature's raw value before it goes into
+// the optimizer, since variance scales with the SQUARE of a linear scale
+// factor. Scaling "overall" by sqrt(2 * however many skills this sport has)
+// makes its cost contribution ~2x the combined weight of every individual
+// skill — dominant, but not so dominant that skills stop mattering at all.
 export function buildFeatureVectors(
   players: BalanceablePlayer[],
   aggregates: Map<string, PlayerAggregate>,
@@ -124,12 +139,13 @@ export function buildFeatureVectors(
   }
 
   const overallColumn = normalize(players.map((p) => aggregates.get(p.id)?.score01 ?? 0.5));
+  const overallBoost = Math.sqrt(2 * sport.params.length);
 
   return players.map((p, i) => ({
     id: p.id,
     features: [
       ...sport.params.map((param) => paramColumns[param.key][i]),
-      overallColumn[i],
+      overallColumn[i] * overallBoost,
       normHeights[i] * 0.6,
       genderDim[i] * 0.4,
     ],

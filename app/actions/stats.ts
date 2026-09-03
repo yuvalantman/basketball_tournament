@@ -118,7 +118,16 @@ export async function getMissingRatingsBanner(
   return { items };
 }
 
-export type TeamStrength = { teamId: string; averageScore: number | null; playerCount: number };
+export type TeamStrength = {
+  teamId: string;
+  averageScore: number | null;
+  playerCount: number;
+  // Per-attribute team averages (70-100 scale) — the "Inspect" breakdown
+  // behind the simple averageScore number, manager-only (unlike
+  // averageScore, which can also be exposed to regular members via the
+  // group's display_options.group_strength toggle).
+  perParam: Record<string, number>;
+};
 
 // "Group strength": each of a gameday's generated teams' average score
 // (70-100 scale), reusing the exact same aggregation
@@ -186,10 +195,21 @@ export async function getGamedayTeamStrength(gamedayId: string): Promise<TeamStr
     const scores = ids
       .map((id) => aggregates.get(id)?.score01)
       .filter((s): s is number => s != null);
+
+    const perParam: Record<string, number> = {};
+    for (const param of sport.params) {
+      const own01s = ids
+        .map((id) => aggregates.get(id)?.perParam[param.key])
+        .filter((entry): entry is { weightedMean: number; raterCount: number } => entry != null)
+        .map((entry) => (entry.weightedMean - param.scaleMin) / (param.scaleMax - param.scaleMin));
+      if (own01s.length) perParam[param.key] = scoreToDisplay(own01s.reduce((a, b) => a + b, 0) / own01s.length);
+    }
+
     return {
       teamId,
       averageScore: scores.length ? scoreToDisplay(scores.reduce((a, b) => a + b, 0) / scores.length) : null,
       playerCount: ids.length,
+      perParam,
     };
   });
 }

@@ -11,6 +11,7 @@ import { SPORTS, overallParam, paramLabel, type SportId } from "@/lib/sports";
 import type { Group, Participant, Profile, Team } from "@/lib/types";
 import type { GamedayDetail } from "@/lib/data";
 import type { TeamStrength } from "@/app/actions/stats";
+import type { GamedaySplitMode } from "@/lib/balancing";
 import { useLocale } from "@/lib/i18n/LocaleContext";
 import {
   addGuest,
@@ -26,6 +27,7 @@ import {
   leaveWaitlist,
   removeFromGamedayTeam,
   removeFromWaitlist,
+  removeGamedayTeams,
   removeParticipant,
   removeRestriction,
   rerollGamedayTeams,
@@ -71,6 +73,7 @@ export function GamedayView({
   const [addingGuest, setAddingGuest] = useState(false);
   const [addingRestriction, setAddingRestriction] = useState(false);
   const [waitlistPopupPosition, setWaitlistPopupPosition] = useState<number | null>(null);
+  const [splitMode, setSplitMode] = useState<GamedaySplitMode>("reserves");
 
   async function run(fn: () => Promise<{ ok: boolean; error?: string }>) {
     setBusy(true);
@@ -203,19 +206,65 @@ export function GamedayView({
       )}
 
       {isManager && (
-        <div className="flex items-center gap-2">
-          <Button
-            className="flex-1"
-            disabled={busy || participants.length < 2}
-            onClick={() => run(() => generateGamedayTeams(gameday.id))}
-          >
-            {teams.length === 0 ? t("gamedayView.generateTeams") : t("gamedayView.rerollTeams")}
-          </Button>
-          <HelpTooltip text={t("help.generateTeams")} />
+        <div className="space-y-2">
+          <div>
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <span className="text-xs font-medium text-[var(--muted)]">{t("gamedayView.splitMode")}</span>
+              <HelpTooltip text={t("help.splitMode")} />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setSplitMode("reserves")}
+                className={`rounded-xl py-2 text-xs font-semibold border transition ${
+                  splitMode === "reserves"
+                    ? "bg-[var(--primary)] text-[var(--primary-foreground)] border-[var(--primary)]"
+                    : "bg-[var(--surface-2)] border-[var(--border)] text-[var(--muted)]"
+                }`}
+              >
+                {t("gamedayView.splitModeReserves")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSplitMode("extra_team")}
+                className={`rounded-xl py-2 text-xs font-semibold border transition ${
+                  splitMode === "extra_team"
+                    ? "bg-[var(--primary)] text-[var(--primary-foreground)] border-[var(--primary)]"
+                    : "bg-[var(--surface-2)] border-[var(--border)] text-[var(--muted)]"
+                }`}
+              >
+                {t("gamedayView.splitModeExtraTeam")}
+              </button>
+            </div>
+          </div>
 
-          {teams.length > 0 && (
-            <Button variant={swapMode ? "primary" : "secondary"} onClick={() => setSwapMode((s) => !s)}>
-              {swapMode ? t("gamedayView.doneSwapping") : t("gamedayView.swapPlayers")}
+          <div className="flex items-center gap-2">
+            <Button
+              className="flex-1"
+              disabled={busy || participants.length < 2}
+              onClick={() => run(() => generateGamedayTeams(gameday.id, splitMode))}
+            >
+              {teams.length === 0 ? t("gamedayView.generateTeams") : t("gamedayView.rerollTeams")}
+            </Button>
+            <HelpTooltip text={t("help.generateTeams")} />
+
+            {teams.length > 0 && (
+              <Button variant={swapMode ? "primary" : "secondary"} onClick={() => setSwapMode((s) => !s)}>
+                {swapMode ? t("gamedayView.doneSwapping") : t("gamedayView.swapPlayers")}
+              </Button>
+            )}
+          </div>
+
+          {teams.length > 0 && !swapMode && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={() => {
+                if (confirm(t("gamedayView.removeTeamsConfirm"))) run(() => removeGamedayTeams(gameday.id));
+              }}
+            >
+              {t("gamedayView.removeTeams")}
             </Button>
           )}
         </div>
@@ -227,6 +276,7 @@ export function GamedayView({
           gamedayId={gameday.id}
           myUserId={myUserId}
           isManager={isManager}
+          sport={group.sport}
           teamStrength={teamStrength}
           onChanged={() => router.refresh()}
         />
@@ -368,6 +418,7 @@ function TeamsDisplay({
   gamedayId,
   myUserId,
   isManager,
+  sport,
   teamStrength,
   onChanged,
 }: {
@@ -375,10 +426,12 @@ function TeamsDisplay({
   gamedayId: string;
   myUserId: string;
   isManager: boolean;
+  sport: SportId;
   teamStrength: TeamStrength[] | null;
   onChanged: () => void;
 }) {
   const { t } = useLocale();
+  const [inspectingTeamId, setInspectingTeamId] = useState<string | null>(null);
   return (
     <div className="space-y-3">
       {teams.map((tm) => {
@@ -421,9 +474,44 @@ function TeamsDisplay({
                 </div>
               ))}
             </div>
+
+            {isManager && strength && (
+              <button
+                type="button"
+                onClick={() => setInspectingTeamId((id) => (id === tm.id ? null : tm.id))}
+                className="text-xs text-[var(--muted)] hover:text-[var(--primary)] self-start"
+              >
+                {inspectingTeamId === tm.id ? t("cards.hideInspection") : t("cards.inspectRatings")}
+              </button>
+            )}
+            {isManager && inspectingTeamId === tm.id && strength && (
+              <TeamInspectPanel sport={sport} strength={strength} />
+            )}
           </Card>
         );
       })}
+    </div>
+  );
+}
+
+function TeamInspectPanel({ sport, strength }: { sport: SportId; strength: TeamStrength }) {
+  const { t, locale } = useLocale();
+  const sportConfig = SPORTS[sport];
+  return (
+    <div className="border-t border-[var(--border)] pt-3">
+      <div className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wide mb-1.5">
+        {t("cards.fullAverages")}
+      </div>
+      <div className="grid grid-cols-2 gap-1.5 text-sm">
+        {sportConfig.params.map((param) =>
+          strength.perParam[param.key] != null ? (
+            <div key={param.key} className="flex items-center justify-between rounded-lg bg-[var(--surface-2)] px-2.5 py-1.5">
+              <span className="text-[var(--muted)]">{paramLabel(param, locale)}</span>
+              <span className="font-semibold">{strength.perParam[param.key]}</span>
+            </div>
+          ) : null,
+        )}
+      </div>
     </div>
   );
 }

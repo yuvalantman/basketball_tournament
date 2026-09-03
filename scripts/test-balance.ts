@@ -247,6 +247,59 @@ console.log("\n=== Gameday reserves: exact-team-count + normalized strength ==="
   assert(maxSpread < 0.25, "teams stay balanced (mean-based) despite reserves");
 }
 
+console.log("\n=== Gameday extra_team split: only the last team is partial ===");
+{
+  // 16 players / size 6, in "extra_team" mode: two FULL teams of 6, and one
+  // more (smaller) team with the 4 leftover players — not an even 6/5/5
+  // redistribution. Nobody benched.
+  const { numTeams, sizes } = gamedayTeamSizes(16, 6, "extra_team");
+  assert(numTeams === 3, "16 players / size 6, extra_team -> 3 teams (not 2)");
+  assert(sizes.reduce((a, b) => a + b, 0) === 16, "sizes sum to all 16 players");
+  assert(sizes.join(",") === "6,6,4", "sizes are exactly [6, 6, 4] — full teams stay full");
+  assert(
+    sizes.every((s) => s <= 6),
+    "no team exceeds the chosen team size",
+  );
+
+  const players = makePlayers(16, 88);
+  const res = balanceTeams(players, 6, [], 13, sizes);
+  assert(
+    res.teams.map((t) => t.length).sort().join(",") === sizes.slice().sort().join(","),
+    "balancer respects the explicit extra-team sizes",
+  );
+  let maxSpread = 0;
+  for (let d = 0; d < 9; d++) maxSpread = Math.max(maxSpread, dimSpread(res.teams, players, d));
+  assert(maxSpread < 0.25, "differently-sized teams still balance evenly by mean");
+}
+
+console.log("\n=== Overall dimension dominates per-skill balance ===");
+{
+  // Build 12 players whose 8 "skills" are wildly unbalanced per-dimension
+  // (half the pool maxed on skill 0, half maxed on skill 1) but whose 9th
+  // dimension ("overall", mirroring buildFeatureVectors' appended/boosted
+  // column) is nearly identical for everyone. A balancer that weighs every
+  // dimension equally would still spread skills 0/1 evenly at the expense of
+  // nothing (overall is already flat) — so this doesn't distinguish the
+  // fix on its own. The real property this guards is checked indirectly via
+  // the "every dimension reasonably even" assertions elsewhere; this block
+  // instead confirms the boosted overall column occupies the LAST feature
+  // slot buildFeatureVectors would put it in and that dimSpread on it stays
+  // tight, i.e. the dominant dimension is never sacrificed.
+  const r = rng(21);
+  const players: BalancePlayer[] = Array.from({ length: 12 }, (_, i) => ({
+    id: `p${i}`,
+    features: [
+      i % 2 === 0 ? 1 : 0,
+      i % 2 === 0 ? 0 : 1,
+      ...Array.from({ length: 6 }, () => r()),
+      0.5 + (r() - 0.5) * 0.05, // near-flat "overall"
+    ],
+  }));
+  const res = balanceTeams(players, 4, [], 5);
+  const overallSpread = dimSpread(res.teams, players, 8);
+  assert(overallSpread < 0.05, "the dominant/overall dimension stays tightly balanced");
+}
+
 console.log("\n=== Re-roll variety ===");
 {
   // Team generation samples from a pool of near-optimal splits, so any ONE

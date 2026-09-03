@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { aggregateRatings, buildFeatureVectors, type RatingRow } from "@/lib/stats";
-import { balanceTeams, gamedayTeamSizes } from "@/lib/balancing";
+import { balanceTeams, gamedayTeamSizes, type GamedaySplitMode } from "@/lib/balancing";
 import { SPORTS, type SportId } from "@/lib/sports";
 import type { ParticipantKind } from "@/lib/types";
 import {
@@ -408,7 +408,11 @@ const TEAM_NAMES = [
   "Team Echo", "Team Foxtrot", "Team Golf", "Team Hotel",
 ];
 
-async function runGeneration(gamedayId: string, seed: number): Promise<ActionResult> {
+async function runGeneration(
+  gamedayId: string,
+  seed: number,
+  splitMode: GamedaySplitMode = "reserves",
+): Promise<ActionResult> {
   const admin = createAdminClient();
 
   // Wave 1: gameday/participants/restrictions only depend on gamedayId, not
@@ -474,7 +478,7 @@ async function runGeneration(gamedayId: string, seed: number): Promise<ActionRes
   const aggregates = aggregateRatings(combinedRows, sportConfig);
   const vectors = buildFeatureVectors(players, aggregates, sportConfig);
 
-  const { numTeams, sizes } = gamedayTeamSizes(players.length, gameday.team_size as number);
+  const { numTeams, sizes } = gamedayTeamSizes(players.length, gameday.team_size as number, splitMode);
   const result = balanceTeams(vectors, gameday.team_size as number, restrictions, seed, sizes);
 
   // Persist: wipe old teams (cascade removes members), then bulk-insert all
@@ -520,10 +524,13 @@ async function runGeneration(gamedayId: string, seed: number): Promise<ActionRes
   };
 }
 
-export async function generateGamedayTeams(gamedayId: string): Promise<ActionResult> {
+export async function generateGamedayTeams(
+  gamedayId: string,
+  splitMode: GamedaySplitMode = "reserves",
+): Promise<ActionResult> {
   try {
     await requireGamedayManager(gamedayId);
-    const result = await runGeneration(gamedayId, Math.floor(Math.random() * 1e9));
+    const result = await runGeneration(gamedayId, Math.floor(Math.random() * 1e9), splitMode);
     const groupId = await getGamedayGroupId(gamedayId);
     revalidatePath(`/group/${groupId}/gameday/${gamedayId}`);
     return result;
@@ -532,8 +539,27 @@ export async function generateGamedayTeams(gamedayId: string): Promise<ActionRes
   }
 }
 
-export async function rerollGamedayTeams(gamedayId: string): Promise<ActionResult> {
-  return generateGamedayTeams(gamedayId);
+export async function rerollGamedayTeams(
+  gamedayId: string,
+  splitMode: GamedaySplitMode = "reserves",
+): Promise<ActionResult> {
+  return generateGamedayTeams(gamedayId, splitMode);
+}
+
+// Undo team generation entirely — back to just a participant list, with no
+// teams. Repeatable any number of times, same as regenerating: this only
+// deletes `teams` (team_members cascades), it never touches participants,
+// the waitlist, or restrictions.
+export async function removeGamedayTeams(gamedayId: string): Promise<ActionResult> {
+  try {
+    const { groupId } = await requireGamedayManager(gamedayId);
+    const admin = createAdminClient();
+    await admin.from("teams").delete().eq("gameday_id", gamedayId);
+    revalidatePath(`/group/${groupId}/gameday/${gamedayId}`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
 }
 
 // --- manual team edits -------------------------------------------------------

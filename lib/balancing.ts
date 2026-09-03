@@ -56,18 +56,45 @@ function teamSizes(numPlayers: number, numTeams: number): number[] {
   return Array.from({ length: numTeams }, (_, i) => base + (i < rem ? 1 : 0));
 }
 
-// Gameday team sizes: unlike teamCountFor/teamSizes above (which rounds to
-// the NEAREST team count, e.g. 16 players @ size 6 -> 3 teams of ~5), a
-// gameday keeps exactly the number of FULL teams the chosen size implies and
-// pushes any remainder in as reserves on top of that (16 @ size 6 -> 2 teams
-// of 8, i.e. 6 core + 2 reserves each). The core balancing optimizer already
-// works on per-team MEANS, not sums, so a team with extra reserves doesn't
-// look artificially stronger/weaker purely from headcount — no change needed
-// there, only in how many players end up on each team.
+export type GamedaySplitMode = "reserves" | "extra_team";
+
+// Gameday team sizes, in one of two creator-chosen modes:
+//
+// - "reserves" (default, unchanged from before this option existed): keeps
+//   exactly the number of FULL teams the chosen size implies and pushes any
+//   remainder in as reserves on top of that (16 @ size 6 -> 2 teams of 8,
+//   i.e. 6 core + 2 reserves each) — some players sit as reserves.
+// - "extra_team": every team STAYS at the chosen size except the last one,
+//   which is the ONE team that isn't full and takes whatever's left over
+//   (16 @ size 6 -> 6, 6, 4 — not an even 6/5/5 redistribution). Nobody sits
+//   out, at the cost of that one team being smaller. Since the balancer
+//   already compares teams by per-player MEAN (not sum), the smaller team
+//   isn't judged weaker just for having fewer players.
 export function gamedayTeamSizes(
   numPlayers: number,
   teamSize: number,
+  mode: GamedaySplitMode = "reserves",
 ): { numTeams: number; sizes: number[] } {
+  if (mode === "extra_team") {
+    const rawTeams = Math.ceil(numPlayers / teamSize);
+    const numTeams = Math.max(2, rawTeams);
+    if (numTeams === rawTeams) {
+      // Enough players for `numTeams - 1` FULL teams at the chosen size;
+      // the last team is the one "extra" team, sized however many are left.
+      const fullTeams = numTeams - 1;
+      const lastSize = numPlayers - fullTeams * teamSize;
+      return { numTeams, sizes: [...Array(fullTeams).fill(teamSize), lastSize] };
+    }
+    // Degenerate case: fewer players than even one full team of teamSize,
+    // but the app always requires at least 2 teams — "keep full teams full"
+    // doesn't apply here (there ISN'T a full team's worth), so fall back to
+    // splitting evenly across the enforced minimum of 2.
+    const core = Math.floor(numPlayers / numTeams);
+    const remainder = numPlayers - core * numTeams;
+    const sizes = Array.from({ length: numTeams }, (_, i) => core + (i < remainder ? 1 : 0));
+    return { numTeams, sizes };
+  }
+
   const numTeams = Math.max(2, Math.floor(numPlayers / teamSize));
   const core = Math.floor(numPlayers / numTeams);
   const remainder = numPlayers - core * numTeams;
